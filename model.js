@@ -23,9 +23,11 @@ var Y;
                 self.setValue(newValue);
                 return accessor;
             };
-            accessor.valuechange = function (handler, remove) {
-                if (remove === void 0) { remove = false; }
-                self.valuechange(handler, remove);
+            accessor.subscribe = function (handler) {
+                self.subscribe(handler);
+            };
+            accessor.unsubscribe = function (handler) {
+                self.unsubscribe(handler);
             };
             accessor.toString = function () { return self.getValue(); };
             this.$model = accessor.$model = this;
@@ -65,25 +67,24 @@ var Y;
             this.setValue(newValue, source);
             return newSubject;
         };
-        Model.prototype.valuechange = function (handler, remove) {
-            if (remove === void 0) { remove = false; }
+        Model.prototype.subscribe = function (handler) {
             var handlers = this._changeHandlers;
-            if (remove) {
-                if (!handlers) {
-                    return;
-                }
-                for (var i = 0, j = handlers.length; i < j; i++) {
-                    var existed = handlers.shift();
-                    if (existed !== handler) {
-                        handlers.push(existed);
-                    }
-                }
-                return;
-            }
             if (!handlers) {
                 handlers = this._changeHandlers = new Array();
             }
             handlers.push(handler);
+        };
+        Model.prototype.unsubscribe = function (handler) {
+            var handlers = this._changeHandlers;
+            if (!handlers) {
+                return;
+            }
+            for (var i = 0, j = handlers.length; i < j; i++) {
+                var existed = handlers.shift();
+                if (existed !== handler) {
+                    handlers.push(existed);
+                }
+            }
         };
         //触发事件
         Model.prototype._notifyValuechange = function (evt, ignoreSuperior) {
@@ -256,10 +257,10 @@ var Y;
                     continue;
                 }
                 var depModel = deps[n];
-                if (!depModel.valuechange) {
+                if (!depModel.subscribe) {
                     throw n + " is not a model or accessor.";
                 }
-                depModel.valuechange(function (sender, evt) {
+                depModel.subscribe(function (sender, evt) {
                     var value = _this._computed.getValue();
                     var computedEvt = new ModelEvent(_this, ModelActions.computed, value, undefined, evt);
                     _this._notifyValuechange(computedEvt, true);

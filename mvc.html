@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="Generator" content="EditPlus®">
+  <meta name="Author" content="">
+  <meta name="Keywords" content="">
+  <meta name="Description" content="">
+  <title>Document</title>
+  <script type="text/javascript">
+try{
+    window.exports = exports;
+}catch(e){
+    window.exports =window;
+}
+  </script>
+  <script src="mvc.js" type="text/javascript"></script>
+ 
+ </head>
+ <body>
+     <div id="main">
+         <label>{Title}<label>
+         <input type="text" value="{{User.Name}}" /><br />
+         <ul>
+             <li><input type="checkbox" value="{Network}" checked="{{HowToKnow}}" />#网络#</li>
+             <li><input type="checkbox" value="#Paper#" checked="{{HowToKnow}}" />#报纸#</li>
+         </ul>
+     </div>
+     <textarea id="console" style="width:200px;height:200px;border:1px solid #333;background-color:#eee;position:fixed;right:0;top:0;"></textarea>
+  <script type="text/javascript">
+var controller ={
+    _TEXT : function(key){return key;}
+};
+var view = new Y.View(controller,document.getElementById("main"));
+view.model.subscribe(function(sender,evt){
+    var obj = view.model.$model.subject();
+    document.getElementById("console").value = JSON.stringify(obj);
+});
+view.model.Title("第一个mvc");
+view.model.User.Name("yiy");
+view.model.Network("Net");
+  </script>
+ </body>
+</html>

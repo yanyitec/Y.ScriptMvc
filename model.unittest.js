@@ -13,7 +13,7 @@ var modelTest = {
         A.eq("yanyi", m.getValue());
         A.eq(subject, m.subject());
         A.eq(name, m.name());
-        m.valuechange(function (sender, evt) {
+        m.subscribe(function (sender, evt) {
             //发送者是模型
             A.eq(m.$accessor, sender);
             A.eq(m, evt.model);
@@ -35,7 +35,7 @@ var modelTest = {
         A.eq(m, m.$accessor);
         A.eq(m, model.$accessor);
         A.eq("yanyi", m());
-        m.valuechange(function (sender, evt) {
+        m.subscribe(function (sender, evt) {
             //发送者是模型
             A.eq(model.$accessor, sender);
             A.eq(model, evt.model);
@@ -48,7 +48,7 @@ var modelTest = {
         A.eq("yiy", subject["myname"]);
         A.eq("yiy", m.toString());
     },
-    "Member&Tree&Event progration": function () {
+    "Member/Tree/Event progration": function () {
         var subjectObj = {};
         var userObj = { Alias: "yiy" };
         var profileObj = { Nick: "yi", Gender: "male" };
@@ -70,7 +70,7 @@ var modelTest = {
         A.eq(user, interests.root());
         A.eq(user, profile.root());
         var userEvtInvoked = false;
-        user.valuechange(function (sender, e) {
+        user.subscribe(function (sender, e) {
             A.eq(user.$accessor, sender);
             A.eq(Y.ModelActions.child, e.action);
             A.eq(userObj, e.value);
@@ -82,7 +82,7 @@ var modelTest = {
             userEvtInvoked = true;
         });
         var interestsEvtInvoked = false;
-        interests.valuechange(function (sender, e) {
+        interests.subscribe(function (sender, e) {
             A.eq(interests.$accessor, sender);
             A.eq(Y.ModelActions.change, e.action);
             A.eq(newProfileObj.Interests, e.value);
@@ -95,7 +95,7 @@ var modelTest = {
             interestsEvtInvoked = true;
         });
         var footballEvtInvoked = false;
-        football.valuechange(function (sender, e) {
+        football.subscribe(function (sender, e) {
             A.eq(football.$accessor, sender);
             A.eq(Y.ModelActions.change, e.action);
             A.eq(newProfileObj.Interests.football, e.value);
@@ -158,7 +158,7 @@ var modelTest = {
         A.eq(2, arr.length);
         A.eq(2, model.count());
     },
-    "itemProto&getItemAt&setItemAt": function () {
+    "itemProto/getItem/setItem": function () {
         var model = new Y.Model();
         var itemProto = model.toArray();
         var arr = model.getValue();
@@ -177,7 +177,7 @@ var modelTest = {
             A.eq(itemValue, src.value);
             set0Invoked = true;
         };
-        model.$accessor.valuechange(set0);
+        model.$accessor.subscribe(set0);
         model.setItem(0, itemValue);
         A["true"](set0Invoked);
         var item0 = model.getItem(0, true);
@@ -186,7 +186,7 @@ var modelTest = {
         A.eq("yiy", item0.prop("Name").getValue());
         A.eq(itemValue, model.getItem(0));
         //reset
-        model.valuechange(set0, true);
+        model.subscribe(set0);
         var item0EvtInvoked = false;
         var newItemValue = { Id: 2, Name: "YI" };
         set0Invoked = false;
@@ -202,7 +202,7 @@ var modelTest = {
             A.eq(itemValue, src.oldValue);
             set0Invoked = true;
         };
-        item0.valuechange(function (sender, e) {
+        item0.subscribe(function (sender, e) {
             item0EvtInvoked = true;
             A.eq(item0.$accessor, sender);
             A.eq(Y.ModelActions.change, e.action);

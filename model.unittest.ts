@@ -12,7 +12,7 @@ let modelTest={
         A.eq("yanyi",m.getValue());
         A.eq(subject,m.subject());
         A.eq(name,m.name());
-        m.valuechange((sender:Y.IModelAccessor,evt:Y.ModelEvent)=>{
+        m.subscribe((sender:Y.IModelAccessor,evt:Y.ModelEvent)=>{
             //发送者是模型
             A.eq(m.$accessor,sender);
             A.eq(m,evt.model);
@@ -34,7 +34,7 @@ let modelTest={
         A.eq(m,m.$accessor);
         A.eq(m,model.$accessor);
         A.eq("yanyi",(m as Function)());
-        m.valuechange((sender:Y.IModelAccessor,evt:Y.ModelEvent)=>{
+        m.subscribe((sender:Y.IModelAccessor,evt:Y.ModelEvent)=>{
             //发送者是模型
             A.eq(model.$accessor,sender);
             A.eq(model,evt.model);
@@ -69,7 +69,7 @@ let modelTest={
         A.eq(user,interests.root());
         A.eq(user,profile.root());
         let userEvtInvoked :boolean=false;
-        user.valuechange((sender:Y.IModelAccessor,e:Y.ModelEvent)=>{
+        user.subscribe((sender:Y.IModelAccessor,e:Y.ModelEvent)=>{
             A.eq(user.$accessor, sender);
             A.eq(Y.ModelActions.child,e.action);
             A.eq(userObj,e.value);
@@ -81,7 +81,7 @@ let modelTest={
             userEvtInvoked = true;
         });
         let interestsEvtInvoked :boolean=false;
-        interests.valuechange((sender:Y.IModelAccessor,e:Y.ModelEvent)=>{
+        interests.subscribe((sender:Y.IModelAccessor,e:Y.ModelEvent)=>{
             A.eq(interests.$accessor, sender);
             A.eq(Y.ModelActions.change,e.action);
             A.eq(newProfileObj.Interests,e.value);
@@ -94,7 +94,7 @@ let modelTest={
             interestsEvtInvoked=true;
         });
         let footballEvtInvoked :boolean=false;
-        football.valuechange((sender:Y.IModelAccessor,e:Y.ModelEvent)=>{
+        football.subscribe((sender:Y.IModelAccessor,e:Y.ModelEvent)=>{
             A.eq(football.$accessor, sender);
             A.eq(Y.ModelActions.change,e.action);
             A.eq(newProfileObj.Interests.football,e.value);
@@ -167,7 +167,7 @@ let modelTest={
         itemProto.prop("Name",null);
         let itemValue:any = {Id:1,Name:"yiy"};
         let set0Invoked:boolean = false;
-        let set0:Y.IModelValueChangeHandler = (sender:Y.IModelAccessor,e:Y.ModelEvent):void=>{
+        let set0:Y.IModelEventHandler = (sender:Y.IModelAccessor,e:Y.ModelEvent):void=>{
             A.eq(model.$accessor,sender);
             A.eq(Y.ModelActions.child,e.action);
             A.eq(arr,e.value);
@@ -178,7 +178,7 @@ let modelTest={
             A.eq(itemValue,src.value);
             set0Invoked = true;
         };
-        model.$accessor.valuechange(set0);
+        model.$accessor.subscribe(set0);
         model.setItem(0,itemValue);
         A.true(set0Invoked);
         let item0:Y.Model = model.getItem(0,true) as Y.Model;
@@ -188,7 +188,7 @@ let modelTest={
         A.eq(itemValue,model.getItem(0));
 
         //reset
-        model.valuechange(set0,true);
+        model.subscribe(set0);
         let item0EvtInvoked:boolean = false;
         let newItemValue :any = {Id:2,Name:"YI"};
         set0Invoked=false;
@@ -204,7 +204,7 @@ let modelTest={
             A.eq(itemValue,src.oldValue);
             set0Invoked = true;
         };
-        item0.valuechange((sender:Y.IModelAccessor,e:Y.ModelEvent)=>{
+        item0.subscribe((sender:Y.IModelAccessor,e:Y.ModelEvent)=>{
             item0EvtInvoked = true;
             A.eq(item0.$accessor,sender);
             A.eq(Y.ModelActions.change,e.action);

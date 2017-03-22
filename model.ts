@@ -1,7 +1,9 @@
 ﻿export namespace Y {
     "use strict";
     export interface IModel {
-        valuechange(handler: IModelValueChangeHandler, remove?: boolean): void;
+        //valuechange(handler: IModelEventHandler, remove?: boolean): void;
+        subscribe(handler:IModelEventHandler):void;
+        unsubscribe(handler:IModelEventHandler):void;
         $model: Model;
         $modelType : ModelTypes;
         $accessor: IModelAccessor;
@@ -16,13 +18,13 @@
     }
     
     export interface IModelAccessor extends IModel {
-        (newValue: any): any;
+        (newValue?: any): any;
     }
     
     export class Model implements IModel {
         private static chromeKeywords: { [id: string]: string }
             = { "name": "name_", "apply": "apply_", "call": "call_", "prototype": "prototype_" };
-        private _changeHandlers: IModelValueChangeHandler[];
+        private _changeHandlers: IModelEventHandler[];
         private _subject: Object;
         private _name: string | number;
         private _defination: Object;
@@ -48,14 +50,17 @@
             
             this._subject = subject===undefined?{}:subject;
             let self :Model = this;
-            let accessor: IModelAccessor  = <IModelAccessor>function(newValue:any):any{
+            let accessor: IModelAccessor  = <IModelAccessor>function(newValue?:any):any{
                 if (newValue === undefined) { return self._subject[self._name]; }
                 self.setValue(newValue);
                 return accessor;
             };
             
-            accessor.valuechange = (handler: IModelValueChangeHandler, remove: boolean = false):void => {
-                self.valuechange(handler, remove);
+            accessor.subscribe = (handler: IModelEventHandler):void => {
+                self.subscribe(handler);
+            };
+            accessor.unsubscribe = (handler: IModelEventHandler):void => {
+                self.unsubscribe(handler);
             };
             accessor.toString =  ():string => { return self.getValue();}
             this.$model = accessor.$model = this;
@@ -89,25 +94,26 @@
             return newSubject;
         }
         
-        public valuechange(handler: IModelValueChangeHandler, remove: boolean = false): void {
-            let handlers: IModelValueChangeHandler[] = this._changeHandlers;
-            if (remove) {
-                if (!handlers) { return; }
-                for (let i: number = 0, j: number = handlers.length; i < j; i++) {
-                    let existed: IModelValueChangeHandler = handlers.shift();
-                    if (existed !== handler) { handlers.push(existed); }
-                }
-                return;
-            }
-            if (!handlers) { handlers = this._changeHandlers = new Array<IModelValueChangeHandler>(); }
+        
+        public subscribe(handler: IModelEventHandler):void{
+            let handlers: IModelEventHandler[] = this._changeHandlers;
+            if (!handlers) { handlers = this._changeHandlers = new Array<IModelEventHandler>(); }
             handlers.push(handler);
+        }
+        public unsubscribe(handler: IModelEventHandler):void{
+            let handlers: IModelEventHandler[] = this._changeHandlers;
+            if (!handlers) { return; }
+            for (let i: number = 0, j: number = handlers.length; i < j; i++) {
+                let existed: IModelEventHandler = handlers.shift();
+                if (existed !== handler) { handlers.push(existed); }
+            }            
         }
         //触发事件
         private _notifyValuechange(evt: ModelEvent,ignoreSuperior?:boolean):void {
-            let changeHandlers: IModelValueChangeHandler[] = this._changeHandlers;
+            let changeHandlers: IModelEventHandler[] = this._changeHandlers;
             if (changeHandlers) {
                 for (var i: number = 0, j: number = changeHandlers.length; i < j; i++) {
-                    let handler: IModelValueChangeHandler = changeHandlers.shift();
+                    let handler: IModelEventHandler = changeHandlers.shift();
                     handler.call(this, this.$accessor, evt);
                     changeHandlers.push(handler);
                 }
@@ -254,8 +260,8 @@
             for (let n in deps) {
                 if (!deps.hasOwnProperty(n)) { continue; }
                 let depModel: IModel = deps[n];
-                if (!depModel.valuechange) { throw n + " is not a model or accessor."; }
-                depModel.valuechange((sender: IModelAccessor, evt: ModelEvent): void => {
+                if (!depModel.subscribe) { throw n + " is not a model or accessor."; }
+                depModel.subscribe((sender: IModelAccessor, evt: ModelEvent): void => {
                     var value:any = this._computed.getValue();
                     let computedEvt: ModelEvent = new ModelEvent(this, ModelActions.computed, value, undefined, evt);
                     this._notifyValuechange(computedEvt,true);
@@ -484,7 +490,7 @@
             }
         }
     }
-    export interface IModelValueChangeHandler {
+    export interface IModelEventHandler {
         (sender: IModelAccessor, evt: ModelEvent):any;
     }
     
