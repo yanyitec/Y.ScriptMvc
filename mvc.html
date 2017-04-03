@@ -39,6 +39,20 @@ view.model.subscribe(function(sender,evt){
 view.model.Title("第一个mvc");
 view.model.User.Name("yiy");
 view.model.Network("Net");
+
+
   </script>
+  <div>
+      <script y-module="controller">
+module({
+    lang:"lang.{language}.json",
+    libs:["jquery","bdn.com/bootstrip.js"],
+    imports:["util/util.js","/static/js/datetimepicker.js"],
+    define:function(util,dp){
+
+    }
+});
+      </script>
+  </div>
  </body>
 </html>

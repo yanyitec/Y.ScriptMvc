@@ -1,7 +1,11 @@
 export namespace Y {
     "use strict";
+    
+    
+    ////////////////////////////////////
+    /// export interfaces
+    ///////////////////////////////////
     export interface IModel {
-        //valuechange(handler: IModelEventHandler, remove?: boolean): void;
         subscribe(handler:IModelEventHandler):void;
         unsubscribe(handler:IModelEventHandler):void;
         $model: Model;
@@ -20,7 +24,413 @@ export namespace Y {
     export interface IModelAccessor extends IModel {
         (newValue?: any): any;
     }
+    export interface IModelEventHandler {
+        (sender: IModelAccessor, evt: ModelEvent):any;
+    }
+
+    export interface IView{
+        proto:IView;
+        element :HTMLElement;
+        model:IModel;
+        clone(controller:IController,model?:IModel):IView;
+    }
+
+    export interface IController{
+        _TEXT:ILabel;
+        module:IModule;
+    }
+
+    export interface IModule{
+        views:{[index:string]:IView}
+    }
+    export interface ILabel{
+         (key:string):string;
+    }
+    export interface IPlatform{
+        alert(message:string);
+        //添加事件
+        attach(elem:HTMLElement,evtName:string,evtHandler:Function):void;
+        //解除事件
+        detech(elem:HTMLElement,evtName:string,evtHandler:Function):void;
+        ajax(opts):void;
+        //获取内容
+        getContent(url:string,callback:Function):void;
+        cloneNode(element:HTMLElement):HTMLElement;
+    }
     
+    ////////////////////////////////////
+    /// 平台抽象
+    ///////////////////////////////////
+
+    let tagContainers:{[index:string]:HTMLElement};
+	
+    export class Platform implements IPlatform{
+        attach(elem:HTMLElement,evtName:string,evtHandler:Function):void{}
+        //解除事件
+        detech(elem:HTMLElement,evtName:string,evtHandler:Function):void{}
+        
+        constructor(){
+            this.attach = window["attachEvent"] ? function (elem, evtname, fn) { (elem as any).attachEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.addEventListener(evtname, fn as EventListenerOrEventListenerObject, false); };
+	        this.detech = window["detechEvent"] ? function (elem,evtname,  fn) { (elem as any).detechEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.removeEventListener(evtname, fn as EventListenerOrEventListenerObject, false); }
+            
+        }
+        alert(message:string):void{
+            window.alert(message);
+        }
+        cloneNode(elem:HTMLElement):HTMLElement{
+            var tag = elem.tagName;
+            if (elem.cloneNode) return elem.cloneNode(true) as HTMLElement;
+            if(!tagContainers){
+               tagContainers = {
+                    "": document.createElement("div"),
+                    "LEGEND": document.createElement("fieldset"),
+                    "DT" : document.createElement("DL"),
+                    "LI": document.createElement("ul"),
+                    "TR": document.createElement("tbody"),
+                    "TD": document.createElement("tr"),
+                    "TBODY": document.createElement("table"),
+                    "OPTION": document.createElement("select")
+            };
+	        tagContainers["THEAD"] = tagContainers["TFOOT"] = tagContainers.TBODY;
+	        tagContainers["DD"] = tagContainers.DT;
+            }
+            var ctn = tagContainers[tag] || tagContainers[""];
+            var html = elem.outerHTML + "";
+            ctn.innerHTML = html;
+	        return ctn.firstChild as HTMLElement;
+        }
+        //获取内容
+        getContent(url:string,callback:Function):void{
+            this.ajax({
+                url:url,
+                method:"GET",
+                callback:callback
+            });
+        }
+        ajax(opts:any):void {
+            let http:any=null;
+            if(window["XMLHttpRequest"]){  
+                http=new XMLHttpRequest();  
+                if(http.overrideMimeType) http.overrideMimeType("text/xml");
+            }else if(window["ActiveXObject"]){  
+                var activeName=["MSXML2.XMLHTTP","Microsoft.XMLHTTP"];  
+                for(var i=0;i<activeName.length;i++) try{http=new ActiveXObject(activeName[i]); break;}catch(e){}
+            }
+            if(http==null)  throw "Cannot create XmlHttpRequest Object";
+            
+            var url = opts.url;
+            if(!url) throw "require url";
+            var method = opts.method ? opts.method.toUpperCase():"GET";
+
+            if(method=="POST"){  
+                http.setRequestHeader("Content-type","application/x-www-four-urlencoded");  
+            }  
+            var headers = opts.headers;
+            if(headers) for(let n in headers) http.setRequestHeader(n,headers[n]);  
+        }//end ajax
+
+    }
+
+    
+
+    export let platform:IPlatform= new Platform();
+    
+    ////////////////////////////////////
+    /// 资源加载
+    ////////////////////////////////////
+    let langId:string;
+    export function language(lng:string):void{
+        if(langId===lng) return;
+    }
+    
+
+    ////////////////////////////////////
+    /// 资源加载
+    ////////////////////////////////////
+
+    export let _exports:{};
+
+    let head :HTMLElement;
+
+    export interface SourceCallback{
+        (value:any,error:any):void;
+    }
+    export interface ISourceOpts{
+        
+        type:string;
+        url:string;
+        alias?:string;
+        callback?:SourceCallback;
+        value?:any;
+    }
+    interface ISourceCallback{
+        func:Function;
+        constArgs?:any;
+    }
+    export class Source{
+        url:string;
+        type:string;
+        alias:string;
+        value?:any;
+        error?:any;
+        element?:HTMLElement;
+        _callbacks?:Array<ISourceCallback>;
+        constructor(opts:ISourceOpts|string,callback?:SourceCallback){
+            let _opts :ISourceOpts;
+            if(typeof opts ==="string"){
+                _opts ={url:opts,alias:opts,type:undefined,callback:callback};
+                let url = opts;
+                if(url.lastIndexOf(".js"))_opts.type = "js";
+                else if(url.lastIndexOf(".css")) _opts.type = "css";
+                else if(url.lastIndexOf(".json")) _opts.type = "json";
+            }
+            this.url = _opts.url;
+            this.type = _opts.type;
+            this.alias = _opts.alias;
+            if(_opts.value===undefined){
+                this.value = _opts.value;
+                
+            }else{
+                this._callbacks = [];
+            }
+            if(callback) this.callback(callback,opts);
+            if(_opts.callback) this.callback(_opts.callback,opts);
+            this.refresh();
+            
+        }
+        callback(handle:Function,constArgs?:any):Source{
+            if(this._callbacks===undefined){handle.call(this,this.value,this.error);}
+            else this._callbacks.push({func:handle,constArgs:constArgs});
+            return this;
+        }
+        _done(success,error):void{
+            this.value = success;
+            this.error = error;
+             for(let i=0,j=this._callbacks.length;i<j;i++){
+                let item:ISourceCallback = this._callbacks[i];
+                item.func.call(this,success,error,item.constArgs);
+            }  
+            Y._exports = undefined;
+            this._callbacks = undefined;
+        }
+        refresh():Source{
+            if(!this.url)return;
+            let me:Source = this;
+            if(this.type=="json"){
+                platform.getContent(this.url,function(content,error){
+                    if(!error) me._done(JSON.parse(content),error);
+                    else me._done(undefined,error);
+                });
+                return me;
+            }
+            if(this.type!="js" && this.type!="css"){
+                platform.getContent(this.url,function(content,error){
+                    me._done(content,error);
+                });
+                return me;
+            }
+
+            if(this.element)this.element.parentNode.removeChild(this.element);
+            let elem :HTMLElement;
+            
+            if(this.type=="js"){
+                elem = document.createElement("script");
+                (elem as HTMLScriptElement).src = this.url;
+                (elem as HTMLScriptElement).type = "text/javascript";
+                
+            }else if(this.type=="css"){
+                elem = document.createElement("link");
+                (elem as HTMLLinkElement).href=this.url;
+                (elem as HTMLLinkElement).type="text/css";
+                (elem as HTMLLinkElement).rel="stylesheet";
+            }
+            if(elem["onreadystatechange"]!==undefined){
+                (elem as any).onreadystatechange = function(){
+                    if((elem as any).readyState==4 || (elem as any).readyState=="complete"){
+                       
+                    }
+                }
+            }else elem.onload = function(){
+                for(let i=0,j=me._callbacks.length;i<j;i++){
+                    let item:ISourceCallback = me._callbacks[i];
+                    item.func.call(me,Y._exports,me.error,item.constArgs);
+                }  
+                Y._exports = undefined;
+                me._callbacks = undefined;
+            }
+            elem.onerror = function(ex){
+                for(let i=0,j=me._callbacks.length;i<j;i++){
+                    let item:ISourceCallback = me._callbacks[i];
+                    item.func.call(me,Y._exports,me.error,item.constArgs);
+                }  
+                Y._exports = undefined;
+                me._callbacks = undefined;
+            }
+            
+            let myhead = head;
+            if(myhead==null){
+                let heads:NodeListOf<HTMLHeadElement> = document.getElementsByTagName("head");
+                if(heads && heads.length) {head = myhead = heads[0];}
+                else {myhead = document.body;}
+            }
+            this.element = elem;
+            myhead.appendChild(elem);
+            return this;
+        }
+        dispose():void{
+
+        }
+    }
+    export let sourceCache :{[index:string]:Source}={};
+    export function loadSource(opts:ISourceOpts|string,callback?:SourceCallback){
+        let isUrl:boolean = typeof opts ==="string"; 
+        let name :string=isUrl ?(opts as string): ((opts as ISourceOpts).alias|| (opts as ISourceOpts).url);
+        let source:Source= this.sourceCache[name];
+        if(!source){
+            source = new Source(opts,callback);
+            this.sourceCache[name] = source;
+        }else if(callback) source.callback(callback);
+        return source;
+    }
+
+    ////////////////////////////////////
+    /// 模块化
+    ////////////////////////////////////
+
+    
+    export interface IModuleDefination{
+        deps?:Array<string|ISourceOpts>;
+        imports?:Array<string|ISourceOpts>;
+        lang?:string;
+        define?:Function;
+    }
+    class Module {
+        scripts:any;
+        stylesheets:any;
+        opts:ISourceOpts;
+        url:string;
+        alias:string;
+        _lang?:Object;
+        imports:Array<any>;
+        defineProc:Function;
+        value?:any;
+        
+        _callbacks:Array<Function>;
+        controllerElement:HTMLScriptElement;
+        error:any;
+
+        constructor(opts:IModuleDefination|string){
+            //this.alias =opts.alias;
+            //this.url = opts.url;
+            
+        }
+        define(dfd:IModuleDefination,defineFunc?:Function){
+            let me :Module = this;
+            this.defineProc = defineFunc|| dfd.define;
+            let depScripts:Array<Source> = [];
+            let throughout:boolean = false;
+            let waitingCount = 0;
+            let deps = dfd.deps;
+            if(deps){
+                for(let i=0,j=deps.length;i<j;i++){
+                    if(this.error)return;
+                    waitingCount++;
+                    let dep = deps[i];
+                    loadSource(dep ,function(value,err){
+                        if(err) {  me.error = err;return; }
+                        if(me.error ||(--waitingCount==0 && throughout)) me._done();
+                    });
+                }
+            }
+            let args = [];
+            deps = dfd.imports;
+            if(deps){
+                for(let i=0,j=deps.length;i<j;i++){
+                    if(this.error)return;
+                    waitingCount++;
+                    let dep = deps[i];
+                    loadSource(dep ,function(value,err){
+                        if(err) {  me.error = err;return; }
+                        else {args.push(value);}
+                        if(me.error ||(--waitingCount==0 && throughout)) me._done();
+                    });
+                }
+            }
+            if(dfd.lang){
+                let url :string = dfd.lang.replace("{language}",langId);
+                waitingCount++;
+                new Source(url,function(value,error){
+                    me._lang = value;
+                    if(me.error ||(--waitingCount==0 && throughout)) me._done();
+                });
+            }
+            this.imports = args;
+            throughout = true;
+            if(me.error ||(--waitingCount==0 && throughout)) me._done();
+            
+        }
+        private _done():void{
+            this.value = this.defineProc.apply(this,this.imports);
+            let callbacks = this._callbacks;this._callbacks = undefined;
+            if(callbacks)for(let i=0,j=callbacks.length;i<j;i++){
+                callbacks[i].call(this,this,this.error);
+            }
+            
+        }
+
+        public refresh():void{
+            if(this._callbacks===null) return;
+            let callbacks :Array<Function> = this._callbacks;
+            this._callbacks = null;
+            this.error = undefined;
+            this.controllerElement = undefined;
+            let me :Module = this;
+            platform.getContent(this.url,function(content,error){
+                if(error){platform.alert(error);return;}
+                let container = document.createElement("div");
+                container.innerHTML = content;
+                let at:number =0;let waitingCount :number = 0;
+                for(let i =0,j= container.childNodes.length;i<j;i++){
+                    let depElem :HTMLElement = container.childNodes[at] as HTMLElement;
+                    let tagName:string = depElem.tagName;
+                    let type :string = tagName == "SCRIPT"?"js":(tagName=="LINK"?"css":null);
+                    if( type ){
+                        let ctrl : string = depElem.getAttribute("y-controller");
+                        let url :string = depElem.getAttribute("src") || depElem.getAttribute("href");
+                        if(!url){ this.controllerElement = depElem; at++; continue;}
+                        let alias :string = depElem.getAttribute("y-alias");
+                        
+                        let isScoped:string = depElem.getAttribute("y-module-scope");
+                        waitingCount++;
+                        moduleManager.loadSource({
+                            alias:alias,
+                            url:url,
+                            isScoped: isScoped,
+                            isController:ctrl,
+                            callback:function(elem,error){
+                                if(error) {platform.alert(me.error = error);return;}
+                                if(--waitingCount==0){
+                                    me._done(callbacks);
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+        }
+        
+        dispose():void{
+            for(var n in this.stylesheets){
+                var stylesheet = this.stylesheets[n];
+                stylesheet.dispose();
+            }
+        }
+    }
+    
+
+    ////////////////////////////////////
+    /// Model
+    ///////////////////////////////////
     export class Model implements IModel {
         private static chromeKeywords: { [id: string]: string }
             = { "name": "name_", "apply": "apply_", "call": "call_", "prototype": "prototype_" };
@@ -470,6 +880,7 @@ export namespace Y {
         public directSource: ModelEvent;
         private _finalSource?:ModelEvent;
         public value:any;
+        public extra:any;
         public oldValue: any;
         public index: number;
         public constructor(model: Model, action: ModelActions, value: any, oldValue: any, source?: ModelEvent) {
@@ -490,9 +901,7 @@ export namespace Y {
             }
         }
     }
-    export interface IModelEventHandler {
-        (sender: IModelAccessor, evt: ModelEvent):any;
-    }
+    
     
     class Computed {
         arguments: Array<IModelAccessor>;
@@ -510,49 +919,59 @@ export namespace Y {
     /////////////////////////////////////////////////
     // View
     //////////////////////////////////////////////////
-    "use strict";
-    export interface IController{
-        _TEXT:ILabel;
-    }
-    
     export class View{
         element:HTMLElement;
-        model:IModelAccessor;
-        controller:any;
-        _bind:Function;
-        constructor(controller:any,element?:HTMLElement,model?:Model){
-            this.controller = controller;
-            if(element==null) return;
+        model:Model;
+        controller:IController;
+        _bind:IBind;
+        proto : View;
+        constructor(controller?:IController,model?:Model,element?:HTMLElement){
+            if(controller===undefined) return;
             this.element = element;
-            model ||(model= new Model());
-            this.model = model.$accessor;
-            let bindContext :BindContext = new BindContext(model,element,controller);
-            let exprs :Array<Expression> = [];
-            buildBind(element,bindContext,exprs);
-            while(true){
-                let expr:Expression = exprs.pop();
-                if(!(expr instanceof ChildEndExpression)){
-                    exprs.push(expr);
-                    break;
-                }
-            }
-            var codes = exprs.join("");
-            codes = "var $self = $root;var _scopes=[];" + codes;
-            this._bind = new Function("$root","_element","_controller","_binders",codes);
+            this.model = model ||(model= new Model());
+            this.controller = controller;
+            this._bind = makeBind(this.model,this.element,this.controller);
+            this.proto = this;
         }
-
-        clone():View{
-            var cloned = new View(this.controller);
-            
-            return cloned;
+        clone(controller:IController,model?:Model):View{
+            let other:View =  new View();
+            let proto:View = this;
+            other.element = platform.cloneNode(proto.element);
+            other.model = model ===undefined?proto.model.clone():model;
+            other.controller = controller;
+            other.proto = proto;
+            other._bind = proto._bind;
+            other._bind(other.model,other.element,other.controller);
+            return other;
         }
+        dispose():void{
+            this.proto = undefined;
+            this.model = undefined;
+            this._bind = undefined;
+            this.controller = undefined;
+        }
+        
     }
     export interface IBind{
-        (context:BindContext):void;
+        (modelOrContext:Model|BindContext,element?:HTMLElement,controller?:IController,extra?:any):void;
     }
-    export interface ILabel{
-        (key:string):string;
+    export function makeBind(model:Model,element:HTMLElement,controller:IController):IBind{
+        let bindContext :BindContext = new BindContext(model,element,controller);
+        let exprs :Array<Expression> = [];
+        buildBind(element,bindContext,exprs);
+        while(true){
+            let expr:Expression = exprs.pop();
+            if(!(expr instanceof ChildEndExpression)){
+                exprs.push(expr);
+                break;
+            }
+        }
+        var codes = exprs.join("");
+        codes = "var $self = self.$accessor;\nvar $root = self.root().$accessor;var _binders = Y.binders;\nvar _scopes=[];var attach=Y.platform.attach;var detech = Y.platform.detech;" + codes;
+        return new Function("self","_element","_controller",codes) as IBind;
+
     }
+    
     export class BindContext{
         
         $root:IModelAccessor;
@@ -649,7 +1068,8 @@ export namespace Y {
             let result:DefineResult = defineModel(modelPath,context);
             this.modelPath = result.path;
             this.bind = function(context:BindContext){
-                uniBinder(context._element,result.model.$accessor,attrName);
+                
+                uniBinder(context._element,result.model.$accessor,context._controller,attrName);
             }
         }
         
@@ -662,19 +1082,35 @@ export namespace Y {
         modelPath:string;
         name:string;
         binder:IBinder;
-        constructor(modelPath:string,name:string,context:BindContext){
+        constructor(modelPath:string,name:string,context:BindContext,controller:IController){
             super();
             this.name = name;
             let result:DefineResult = defineModel(modelPath,context);
             this.modelPath = result.path;
             this.binder = context._binders[name];
             this.bind = function(context:BindContext){
-                context._binders[name](context._element,result.model.$accessor);
+                context._binders[name](context._element,result.model.$accessor,controller);
             }
         }
         
         toString():string{
-            return "_binders[\"" + this.name + "\"](_element,"+this.modelPath+");\n";
+            return "_binders[\"" + this.name + "\"](_element,"+this.modelPath+",_controller);\n";
+        }
+    }
+
+    class EachExpression extends Expression{
+        modelPath:string;
+        constructor(modelPath:string,context:BindContext){
+            super();
+            let result:DefineResult = defineModel(modelPath,context);
+            this.modelPath = result.path;
+            this.bind = function(context:BindContext){
+                context._binders["each"](context._element,result.model.$accessor,context._controller);
+            }
+        }
+        
+        toString():string{
+            return "_binders[\"each\"](_element,"+this.modelPath+",_controller);\n";
         }
     }
 
@@ -703,7 +1139,7 @@ export namespace Y {
 
             this.evtName = evtName.indexOf("on")==0?evtName.substr(2):evtName;
             this.bind = (context:BindContext)=>{
-                attach(context._element,this.evtName,function(evt){context._controller[actionName].call(context._controller,evt||window.event,this);}); 
+                platform.attach(context._element,this.evtName,function(evt){context._controller[actionName].call(context._controller,evt||window.event,this);}); 
                 
             };
         }
@@ -771,6 +1207,7 @@ export namespace Y {
         }
         var elementValue = (element as HTMLInputElement).value;
         if(elementValue) {
+            tryBuildLabel(elementValue,element,context,exprs,"value");
             tryBuildUniBound(elementValue,element,context,exprs,"value");
             tryBuildBiBound(elementValue,element,context,exprs); 
         }
@@ -788,8 +1225,18 @@ export namespace Y {
             if(tryBuildEventBound(attr,n,element,context,exprs )) continue;         
         }
         if(!element.hasChildNodes()) return;
+        if(eachAttr){
+            var eachExpr:EachExpression= new EachExpression(eachAttr,context);
+            eachExpr.bind(context);
+            exprs.push(eachExpr);
+            return;
+        }
         var children = element.childNodes;
-        
+        if(scopeAttr){
+            let scopeBegin :ScopeBeginExpression = new ScopeBeginExpression(scopeAttr,context);
+            scopeBegin.bind(context);
+            exprs.push(scopeBegin);
+        }
         
         for(let i:number=0,j:number = element.childNodes.length;i<j;i++){
             let child:HTMLElement = element.childNodes[i] as HTMLElement;
@@ -806,6 +1253,15 @@ export namespace Y {
                 exprs.push(endExpr);
             }
             
+        }
+        if(scopeAttr){
+            let lastExpr :Expression = exprs.pop();
+            if(!(lastExpr instanceof ScopeBeginExpression)) {
+                exprs.push(lastExpr);
+                let scopeEnd:ScopeEndExpression = new ScopeEndExpression();
+                scopeEnd.bind(context);
+                exprs.push(scopeEnd);
+            }
         }
         
 
@@ -844,7 +1300,7 @@ export namespace Y {
         let match:RegExpMatchArray = exprText.match(valueReg);
         if(match!=null){
             let path:string = match[1];
-            let expr :BindExpression = new BindExpression(path,"bibound." + bindname,context);
+            let expr :BindExpression = new BindExpression(path,"bibound." + bindname,context,context._controller);
             expr.bind(context);
             exprs.push(expr);
             return true;
@@ -881,14 +1337,9 @@ export namespace Y {
     function buildBindCodes(element:HTMLElement,codes?:Array<string>){
         if(codes===null || codes===undefined) codes = [];
         let exprs:Array<Expression> = [];
-
-
     }
-    let attach = window["attachEvent"] ? function (elem, evtname, fn) { elem.attachEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.addEventListener(evtname, fn, false); };
-
-	let detech = window["detechEvent"] ? function (evtname, elem, fn) { elem.detechEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.removeEventListener(evtname, fn, false); }
-	export interface IBinder{
-        (element:HTMLElement,accessor:IModelAccessor,extra?:any):Function;
+    export interface IBinder{
+        (element:HTMLElement,accessor:IModelAccessor,controller:IController,extra?:any):Function;
     }
 
     let binders :{[index:string]:IBinder}={
@@ -911,10 +1362,13 @@ export namespace Y {
 	            if (tick) clearTimeout(tick);
 	            tick = setTimeout(onchange, 180);
 	         }
-	        attach(element, "keydown", evtHandler);
-	        attach(element, "keyup", evtHandler);
-	        attach(element, "blur", evtHandler);
-			var handler = function (sender:IModel,evt:ModelEvent) { (element as HTMLInputElement).value = evt.value; };
+	        platform.attach(element, "keydown", evtHandler);
+	        platform.attach(element, "keyup", evtHandler);
+	        platform.attach(element, "blur", evtHandler);
+			var handler = function (sender:IModel,evt:ModelEvent) { 
+                (element as HTMLInputElement).value = evt.value; 
+                evt.extra = element;
+            };
 	        accessor.subscribe(handler);
 	        (element as HTMLInputElement).value = "";
 	        return function () { if (tick) clearTimeout(tick);accessor.unsubscribe(handler);}
@@ -937,36 +1391,37 @@ export namespace Y {
 	                }
 	            }
 	        }
-	        attach(element, "change", evtHandler);
+	        platform.attach(element, "change", evtHandler);
 			var handler = function (evt) { setValue(element, evt.value); }
 	        accessor.subscribe(handler);
 	        setValue(element, accessor());
 			return function(){accessor.unsubscribe(handler);}
 	    },
-	        "bibound.radio": function (element:HTMLElement, accessor:IModelAccessor) {
-	            var evtHandler = function () {
-	                if ((element as HTMLInputElement).checked) accessor((element as HTMLInputElement).value);
-	                else accessor(null);
+	    "bibound.radio": function (element:HTMLElement, accessor:IModelAccessor) {
+	        var evtHandler = function () {
+	            if ((element as HTMLInputElement).checked) accessor((element as HTMLInputElement).value);
+	            else accessor(null);
+	        }
+	        var setValue = function (element:HTMLInputElement, value:any) {
+	            if (value == element.value) {
+	                element.checked = true;
+	                element.setAttribute("checked", "checked");
+	            } else {
+	                element.checked = false;
+	                element.removeAttribute("checked");
 	            }
-	            var setValue = function (element:HTMLInputElement, value:any) {
-	                if (value == element.value) {
-	                    element.checked = true;
-	                    element.setAttribute("checked", "checked");
-	                } else {
-	                    element.checked = false;
-	                    element.removeAttribute("checked");
-	                }
-	            }
-				var handler = function (evt) {
-	                setValue((element as HTMLInputElement), evt.value);
-	            }
-	            attach(element, "change", evtHandler);
-	            attach(element, "blur", evtHandler);
-	            attach(element, "click", evtHandler);
-	            accessor.subscribe(handler);
-	            setValue((element as HTMLInputElement), accessor());
-				return function(){accessor.unsubscribe(handler);}
-	        },
+	        }
+			var handler = function (sender,evt) {
+	            setValue((element as HTMLInputElement), evt.value);
+                evt.extra = element;
+	        }
+	        platform.attach(element, "change", evtHandler);
+	        platform.attach(element, "blur", evtHandler);
+	        platform.attach(element, "click", evtHandler);
+	        accessor.subscribe(handler);
+	        setValue((element as HTMLInputElement), accessor());
+			return function(){accessor.unsubscribe(handler);}
+	    },
 	    "bibound.checkbox": function (element:HTMLElement, accessor) {
 	        var evtHandler = function () {
                 let form:HTMLFormElement = (element as HTMLInputElement).form;
@@ -1024,18 +1479,19 @@ export namespace Y {
 	        }
 			let handler:IModelEventHandler = function (sender:IModel,evt:ModelEvent) {
 	            var value = evt.value;
+                evt.extra = element;
 	            setValue(element, value);
 	        };
-	        attach(element, "change", evtHandler);
-	        attach(element, "blur", evtHandler);
-	        attach(element, "click", evtHandler);
+	        platform.attach(element, "change", evtHandler);
+	        platform.attach(element, "blur", evtHandler);
+	        platform.attach(element, "click", evtHandler);
 	        accessor.subscribe(handler);
 	        (element as HTMLInputElement).checked = false;
             element.removeAttribute("checked");
 			return function(){accessor.unsubscribe(handler);}
 	    }
     };
-    let uniBinder :IBinder =binders["unibound"]= function(element:HTMLElement, accessor:IModelAccessor,extra?:any):Function{
+    let uniBinder :IBinder =binders["unibound"]= function(element:HTMLElement, accessor:IModelAccessor,controller:IController,extra?:any):Function{
         let setValue:Function;
         if(element.tagName=="SELECT"){
             setValue = function (element:HTMLElement, value:any) {
@@ -1060,71 +1516,90 @@ export namespace Y {
         return function(){accessor.unsubscribe(handler);}
     };
 
-    let eachBinder:IBinder = binders["each"] = function (element:HTMLElement, accessor:IModelAccessor) {
-	        var model = accessor.$model;
-	        var tpl = model.itemProto();
-	        var elem = tpl["@bind.element"];
-	        var childCount = elem.childNodes.length;
-	        var binder = tpl["@bind.binder"];
-	        var setValue = function () {
-	            element.innerHTML = "";
-	            for (var i = 0, j = model.count() ; i < j; i++) {
-	                var item = model.getItem(i, true);
-	                var el = cloneNode(elem);
-	                binder(el, item.accessor);
-	                for (var n = 0, m = childCount; n < m; n++) {
-	                    element.appendChild(el.firstChild);
-	                }
-	            }
-	        }
-			var handler = function (evt) {
-	            switch (evt.reason) {
-	                case "array.push":
-	                    var item = model.getItem(model.count() - 1, true);
-	                    var el = elem.clone(true);
-	                    binder(el, item);
-	                    for (var i = 0, j = childCount; i < j; i++) {
-	                        element.appendChild(el.firstChild);
-	                    }
-	                    break;
-	                case "array.pop":
-	                    for (var i = 0, j = childCount; i < j; i++) {
-	                        element.removeChild(element.lastChild);
-	                    }
-	                    break;
-	                case "array.unshift":
-	                    var item = model.getItem(model.count() - 1, true);
-	                    var el = elem.clone(true);
-	                    binder(el, item);
-	                    if (element.firstChild) {
-	                        for (var i = childCount - 1; i >= 0; i--) {
-	                            element.insertBefore(el.childNodes[i], element.firstChild);
-	                        }
-	                    } else {
-	                        for (var i = 0, j = childCount; i < j; i++) {
-	                            element.appendChild(el.childNodes[i]);
-	                        }
-	                    }
-	                    break;
-	                case "array.shift":
-	                    for (var i = 0, j = childCount; i < j; i++) {
-	                        element.removeChild(element.firstChild);
-	                    }
-	                    break;
-	                case "array.remove":
-	                    var at = childCount * evt.index;
-	                    for (var i = 0, j = childCount; i < j; i++) {
-	                        element.removeChild(element.firstChild);
-	                    }
-	                    break;
-	                default:
-	                    setValue();
+    class EachItemBindInfo{
+        constructor(view:HTMLElement , bind:IBind){
+            this.view = view;
+            this.bind = bind;
+        }
+        view:HTMLElement;
+        bind:IBind;
+    }
+
+    let eachBinder:IBinder = binders["each"] = function (element:HTMLElement, accessor:IModelAccessor,extra?:any) {
+            let controller:IController = extra as IController;
+            let model :Model = accessor.$model;
+            let eachId:string = element.getAttribute("y-each-view-id");
+            let itemViewProto:IView;
+            if(eachId){
+                itemViewProto = controller.module.views[eachId];
+            }else{
+                eachId = seed().toString();
+                element.setAttribute("y-each-bind-id",eachId);
+                var elemProto:HTMLElement = platform.cloneNode(element);
+                let modelProto : Model = model.itemProto().$model;
+                let bind :IBind = makeBind(modelProto,element,controller);
+                itemViewProto = new View(controller,modelProto,elemProto);
+                controller.module.views[eachId] = itemViewProto;
+            }
+	        
+	        
+            
+            let addItemToView = function(item:Model,anchorElement:HTMLElement):void{
+                let itemView:IView = itemViewProto.clone(controller,item);
+                let elem :HTMLElement = itemView.element;
+                if(anchorElement==null) {
+                    for(let i=0,j=elem.childNodes.length;i<j;i++){
+                        element.appendChild(elem.childNodes[i]);
+                    }
+                }else{
+                    for(let i=0,j=elem.childNodes.length;i<j;i++){
+                        element.insertBefore(elem.firstChild,anchorElement);
+                    }
+
+                }
+            }    
+	        
+			var handler = function (sender,evt:ModelEvent) {
+                if(evt.action == ModelActions.change){
+                    element.innerHTML="";
+                    for(let i=0,j=evt.value.length;i<j;i++){
+                        let item :Model = model.getItem(i,true);
+                        addItemToView(item,null);
+                    }
+                    return;
+                }
+                if(evt.action== ModelActions.clear){
+                    element.innerHTML = "";
+                    return;
+                }
+                if(evt.action != ModelActions.child){
+                    return;
+                }
+                let ievt = evt.directSource;
+                let elemProto = itemViewProto.element;
+	            switch (ievt.action) {
+                    case ModelActions.add:
+                        let anchorElement:HTMLElement = null;
+                        if(evt.index*elemProto.childNodes.length<=element.childNodes.length-1)anchorElement = element.childNodes[evt.index] as HTMLElement;
+                        addItemToView(model.getItem(evt.index,true),anchorElement);
+                        break;
+                    case ModelActions.remove:
+                        let at :number = evt.index*elemProto.childNodes.length;
+                        for(let i=0,j=elemProto.childNodes.length;i<j;i++){
+                            let ch:Node = element.childNodes[at];
+                            if(ch==null) break;
+                            element.removeChild(ch);
+                        }
+                        break;
+	                case ModelActions.clear:
+                        element.innerHTML="";
+                        break;
 	            }
 	        }
 			model.subscribe(handler);
             
 
-			setValue();
+			element.innerHTML = "";
 			return function () {
 			    //TODO : 应该要重新构建，而不是清空
 			    model["@model.props"] = {};
@@ -1135,29 +1610,10 @@ export namespace Y {
     let o2Str:Function = Object.prototype.toString;
 
 
-    let tagContainers:{[index:string]:HTMLElement} = {
-	        "": document.createElement("div"),
-	        "LEGEND": document.createElement("fieldset"),
-            "DT" : document.createElement("DL"),
-	        "LI": document.createElement("ul"),
-	        "TR": document.createElement("tbody"),
-	        "TD": document.createElement("tr"),
-	        "TBODY": document.createElement("table"),
-	        "OPTION": document.createElement("select")
-    };
-	    //oToStr = Object.prototype.toString;
-	tagContainers["THEAD"] = tagContainers["TFOOT"] = tagContainers.TBODY;
-	tagContainers["DD"] = tagContainers.DT;
-	let cloneNode:Function = function (elem:HTMLElement) {
-	    var tag = elem.tagName;
-	    if (elem.cloneNode) return elem.cloneNode(true);
-	    var ctn = tagContainers[tag] || tagContainers[""];
-	    var html = elem.outerHTML + "";
-	    ctn.innerHTML = html;
-
-	    //var html = ctn.innerHTML;
-	    //ctn.innerHTML = html;
-	    return ctn.firstChild;
-	}
+    
+    let _seed = 0;
+    export function seed():number{
+        return (_seed==2100000000)?_seed=0:_seed++; 
+    }
     
 }

@@ -559,19 +559,7 @@ var Y;
             this.element = element;
             model || (model = new Model());
             this.model = model.$accessor;
-            var bindContext = new BindContext(model, element, controller);
-            var exprs = [];
-            buildBind(element, bindContext, exprs);
-            while (true) {
-                var expr = exprs.pop();
-                if (!(expr instanceof ChildEndExpression)) {
-                    exprs.push(expr);
-                    break;
-                }
-            }
-            var codes = exprs.join("");
-            codes = "var $self = $root;var _scopes=[];" + codes;
-            this._bind = new Function("$root", "_element", "_controller", "_binders", codes);
+            this._bind = makeBind(model, element, controller);
         }
         View.prototype.clone = function () {
             var cloned = new View(this.controller);
@@ -580,6 +568,22 @@ var Y;
         return View;
     }());
     Y.View = View;
+    function makeBind(model, element, controller) {
+        var bindContext = new BindContext(model, element, controller);
+        var exprs = [];
+        buildBind(element, bindContext, exprs);
+        while (true) {
+            var expr = exprs.pop();
+            if (!(expr instanceof ChildEndExpression)) {
+                exprs.push(expr);
+                break;
+            }
+        }
+        var codes = exprs.join("");
+        codes = "var $self = self.$accessor;\nvar $root = self.root().$accessor;var _binders = Y.binders;\nvar _scopes=[];" + codes;
+        return new Function("self", "_element", "_controller", codes);
+    }
+    Y.makeBind = makeBind;
     var BindContext = (function () {
         function BindContext(root, element, controller) {
             this.$self = this.$root = root.$accessor;
@@ -793,6 +797,7 @@ var Y;
         }
         var elementValue = element.value;
         if (elementValue) {
+            tryBuildLabel(elementValue, element, context, exprs, "value");
             tryBuildUniBound(elementValue, element, context, exprs, "value");
             tryBuildBiBound(elementValue, element, context, exprs);
         }
@@ -941,7 +946,10 @@ var Y;
             attach(element, "keydown", evtHandler);
             attach(element, "keyup", evtHandler);
             attach(element, "blur", evtHandler);
-            var handler = function (sender, evt) { element.value = evt.value; };
+            var handler = function (sender, evt) {
+                element.value = evt.value;
+                evt.extra = element;
+            };
             accessor.subscribe(handler);
             element.value = "";
             return function () { if (tick)
@@ -987,8 +995,9 @@ var Y;
                     element.removeAttribute("checked");
                 }
             };
-            var handler = function (evt) {
+            var handler = function (sender, evt) {
                 setValue(element, evt.value);
+                evt.extra = element;
             };
             attach(element, "change", evtHandler);
             attach(element, "blur", evtHandler);
@@ -1066,6 +1075,7 @@ var Y;
             };
             var handler = function (sender, evt) {
                 var value = evt.value;
+                evt.extra = element;
                 setValue(element, value);
             };
             attach(element, "change", evtHandler);
@@ -1102,70 +1112,75 @@ var Y;
         setValue(element, undefined);
         return function () { accessor.unsubscribe(handler); };
     };
-    var eachBinder = binders["each"] = function (element, accessor) {
+    var EachData = (function () {
+        function EachData(view, bind) {
+            this.view = view;
+            this.bind = bind;
+        }
+        return EachData;
+    }());
+    var eachBinder = binders["each"] = function (element, accessor, extra) {
         var model = accessor.$model;
-        var tpl = model.itemProto();
-        var elem = tpl["@bind.element"];
-        var childCount = elem.childNodes.length;
-        var binder = tpl["@bind.binder"];
-        var setValue = function () {
-            element.innerHTML = "";
-            for (var i = 0, j = model.count(); i < j; i++) {
-                var item = model.getItem(i, true);
-                var el = cloneNode(elem);
-                binder(el, item.accessor);
-                for (var n = 0, m = childCount; n < m; n++) {
-                    element.appendChild(el.firstChild);
+        var controller = extra;
+        var modelProto = model.itemProto().$model;
+        var datas = modelProto["@eachData"] || (modelProto["@eachData"] = []);
+        var viewProto = cloneNode(element);
+        var bind = makeBind(modelProto, element, controller);
+        var d = new EachData(viewProto, bind);
+        var addItemToView = function (item, anchorElement) {
+            var view = cloneNode(viewProto);
+            d.bind(item, view, controller);
+            if (anchorElement == null) {
+                for (var i = 0, j = view.childNodes.length; i < j; i++) {
+                    element.appendChild(view.childNodes[i]);
+                }
+            }
+            else {
+                for (var i = 0, j = view.childNodes.length; i < j; i++) {
+                    element.insertBefore(view.firstChild, anchorElement);
                 }
             }
         };
-        var handler = function (evt) {
-            switch (evt.reason) {
-                case "array.push":
-                    var item = model.getItem(model.count() - 1, true);
-                    var el = elem.clone(true);
-                    binder(el, item);
-                    for (var i = 0, j = childCount; i < j; i++) {
-                        element.appendChild(el.firstChild);
+        var handler = function (sender, evt) {
+            if (evt.action == ModelActions.change) {
+                element.innerHTML = "";
+                for (var i = 0, j = evt.value.length; i < j; i++) {
+                    var item = model.getItem(i, true);
+                    addItemToView(item, null);
+                }
+                return;
+            }
+            if (evt.action == ModelActions.clear) {
+                element.innerHTML = "";
+                return;
+            }
+            if (evt.action != ModelActions.child) {
+                return;
+            }
+            var ievt = evt.directSource;
+            switch (ievt.action) {
+                case ModelActions.add:
+                    var anchorElement = null;
+                    if (evt.index * viewProto.childNodes.length <= element.childNodes.length - 1)
+                        anchorElement = element.childNodes[evt.index];
+                    addItemToView(model.getItem(evt.index, true), anchorElement);
+                    break;
+                case ModelActions.remove:
+                    var at = evt.index * viewProto.childNodes.length;
+                    for (var i = 0, j = viewProto.childNodes.length; i < j; i++) {
+                        var ch = element.childNodes[at];
+                        if (ch == null)
+                            break;
+                        element.removeChild(ch);
                     }
                     break;
-                case "array.pop":
-                    for (var i = 0, j = childCount; i < j; i++) {
-                        element.removeChild(element.lastChild);
-                    }
+                case ModelActions.clear:
+                    element.innerHTML = "";
                     break;
-                case "array.unshift":
-                    var item = model.getItem(model.count() - 1, true);
-                    var el = elem.clone(true);
-                    binder(el, item);
-                    if (element.firstChild) {
-                        for (var i = childCount - 1; i >= 0; i--) {
-                            element.insertBefore(el.childNodes[i], element.firstChild);
-                        }
-                    }
-                    else {
-                        for (var i = 0, j = childCount; i < j; i++) {
-                            element.appendChild(el.childNodes[i]);
-                        }
-                    }
-                    break;
-                case "array.shift":
-                    for (var i = 0, j = childCount; i < j; i++) {
-                        element.removeChild(element.firstChild);
-                    }
-                    break;
-                case "array.remove":
-                    var at = childCount * evt.index;
-                    for (var i = 0, j = childCount; i < j; i++) {
-                        element.removeChild(element.firstChild);
-                    }
-                    break;
-                default:
-                    setValue();
             }
         };
         model.subscribe(handler);
-        setValue();
+        element.innerHTML = "";
         return function () {
             //TODO : 应该要重新构建，而不是清空
             model["@model.props"] = {};
@@ -1197,4 +1212,9 @@ var Y;
         //ctn.innerHTML = html;
         return ctn.firstChild;
     };
+    var _seed = 0;
+    function seed() {
+        return (_seed == 2100000000) ? _seed = 0 : _seed++;
+    }
+    Y.seed = seed;
 })(Y = exports.Y || (exports.Y = {}));
