@@ -4,7 +4,62 @@ export namespace Y {
     
     ////////////////////////////////////
     /// export interfaces
-    ///////////////////////////////////
+    ////////////////////////////////////
+    export interface ILoadCallback{
+        (value:any,error?:any):void;
+    }
+    export interface ISourceOpts{
+        type:string;
+        url:string;
+        alias?:string;
+        callback?:ILoadCallback;
+        value?:any;
+    }
+    export interface ISource{
+        url:string;
+        type:string;
+        alias:string;
+        value?:any;
+        error?:any;
+        element?:HTMLElement;
+        callback(handle:ILoadCallback):ISource;
+        refresh():ISource;
+        dispose():void;
+    }
+
+    //模块化接口
+    export interface IModuleOpts{
+        id?:string;
+        template?:HTMLElement;
+        deps?:Array<string|ISourceOpts>;
+        imports?:Array<string|ISourceOpts>;
+        lang?:string;
+        define?:Function;
+    }
+    export interface IModule{
+        //唯一Id
+        id?:string;
+        ref_count:number;
+        //view模板
+        viewTemplate?:HTMLElement;
+        //字符串资源，多语言用
+        texts?:{[index:string]:string};
+        //导入的资源
+        imports:Array<any>;
+        //错误
+        error?:any;
+        //最后活跃时间
+        activeTime:Date;
+        //加载完成后的回调
+        callback(handle:ILoadCallback):IModule;
+        //dispose事件
+        disposing(handler:Function):IModule;
+        //放在module上的数据
+        data:{[index:string]:any};
+        //释放资源
+        dispose():void;        
+    }
+
     export interface IModel {
         subscribe(handler:IModelEventHandler):void;
         unsubscribe(handler:IModelEventHandler):void;
@@ -29,20 +84,24 @@ export namespace Y {
     }
 
     export interface IView{
-        proto:IView;
         element :HTMLElement;
         model:IModel;
-        clone(controller:IController,model?:IModel):IView;
+        clone(controller?:IController,model?:IModel,element?:HTMLElement):IView;
     }
 
     export interface IController{
+        view:IView;
+        model:IModelAccessor;
         _TEXT:ILabel;
+        views:{[index:string]:IView};
+        parentController:IController;
         module:IModule;
+        load(model:IModelAccessor,view:IView):void;
+        dispose():void;
+
     }
 
-    export interface IModule{
-        views:{[index:string]:IView}
-    }
+    
     export interface ILabel{
          (key:string):string;
     }
@@ -134,48 +193,44 @@ export namespace Y {
     
 
     export let platform:IPlatform= new Platform();
+    let o2Str:Function = Object.prototype.toString;
+
+    export function isArray(o:any){
+        if(!o)return false;
+        return o2Str.call(o) == "[Object Array]";
+    }
+
     
     ////////////////////////////////////
-    /// 资源加载
+    /// 多语言化
     ////////////////////////////////////
     let langId:string;
     export function language(lng:string):void{
         if(langId===lng) return;
     }
+
+    
     
 
     ////////////////////////////////////
     /// 资源加载
     ////////////////////////////////////
 
-    export let _exports:{};
+
 
     let head :HTMLElement;
 
-    export interface SourceCallback{
-        (value:any,error:any):void;
-    }
-    export interface ISourceOpts{
-        
-        type:string;
-        url:string;
-        alias?:string;
-        callback?:SourceCallback;
-        value?:any;
-    }
-    interface ISourceCallback{
-        func:Function;
-        constArgs?:any;
-    }
-    export class Source{
+    let _exports:any;
+    
+    export class Source implements ISource{
         url:string;
         type:string;
         alias:string;
         value?:any;
         error?:any;
         element?:HTMLElement;
-        _callbacks?:Array<ISourceCallback>;
-        constructor(opts:ISourceOpts|string,callback?:SourceCallback){
+        _callbacks?:Array<ILoadCallback>;
+        constructor(opts:ISourceOpts|string,callback?:ILoadCallback){
             let _opts :ISourceOpts;
             if(typeof opts ==="string"){
                 _opts ={url:opts,alias:opts,type:undefined,callback:callback};
@@ -193,27 +248,27 @@ export namespace Y {
             }else{
                 this._callbacks = [];
             }
-            if(callback) this.callback(callback,opts);
-            if(_opts.callback) this.callback(_opts.callback,opts);
+            if(callback) this.callback(callback);
+            if(_opts.callback) this.callback(_opts.callback);
             this.refresh();
             
         }
-        callback(handle:Function,constArgs?:any):Source{
+        callback(handle:ILoadCallback):ISource{
             if(this._callbacks===undefined){handle.call(this,this.value,this.error);}
-            else this._callbacks.push({func:handle,constArgs:constArgs});
+            else this._callbacks.push(handle);
             return this;
         }
         _done(success,error):void{
             this.value = success;
             this.error = error;
              for(let i=0,j=this._callbacks.length;i<j;i++){
-                let item:ISourceCallback = this._callbacks[i];
-                item.func.call(this,success,error,item.constArgs);
+                let item:ILoadCallback = this._callbacks[i];
+                item.call(this,success,error);
             }  
-            Y._exports = undefined;
+            _exports = undefined;
             this._callbacks = undefined;
         }
-        refresh():Source{
+        refresh():ISource{
             if(!this.url)return;
             let me:Source = this;
             if(this.type=="json"){
@@ -252,18 +307,18 @@ export namespace Y {
                 }
             }else elem.onload = function(){
                 for(let i=0,j=me._callbacks.length;i<j;i++){
-                    let item:ISourceCallback = me._callbacks[i];
-                    item.func.call(me,Y._exports,me.error,item.constArgs);
+                    let item:ILoadCallback = me._callbacks[i];
+                    item.call(me,_exports,me.error);
                 }  
-                Y._exports = undefined;
+                _exports = undefined;
                 me._callbacks = undefined;
             }
             elem.onerror = function(ex){
                 for(let i=0,j=me._callbacks.length;i<j;i++){
-                    let item:ISourceCallback = me._callbacks[i];
-                    item.func.call(me,Y._exports,me.error,item.constArgs);
+                    let item:ILoadCallback = me._callbacks[i];
+                    item.call(me,_exports,me.error);
                 }  
-                Y._exports = undefined;
+                _exports = undefined;
                 me._callbacks = undefined;
             }
             
@@ -280,87 +335,152 @@ export namespace Y {
         dispose():void{
 
         }
+        public static load(opts:ISourceOpts|string,callback?:ILoadCallback):Source{
+            let isUrl:boolean = typeof opts ==="string"; 
+            let name :string=isUrl ?(opts as string): ((opts as ISourceOpts).alias|| (opts as ISourceOpts).url);
+            let source:Source= sourceCache[name];
+            if(!source){
+                source = new Source(opts,callback);
+                sourceCache[name] = source;
+            }else if(callback) source.callback(callback);
+            return source;
+        }
     }
     export let sourceCache :{[index:string]:Source}={};
-    export function loadSource(opts:ISourceOpts|string,callback?:SourceCallback){
-        let isUrl:boolean = typeof opts ==="string"; 
-        let name :string=isUrl ?(opts as string): ((opts as ISourceOpts).alias|| (opts as ISourceOpts).url);
-        let source:Source= this.sourceCache[name];
-        if(!source){
-            source = new Source(opts,callback);
-            this.sourceCache[name] = source;
-        }else if(callback) source.callback(callback);
-        return source;
-    }
+    
 
     ////////////////////////////////////
     /// 模块化
     ////////////////////////////////////
-
+    export let moduleCache :{[index:string]:Module} = {};
+    let _moduleTick:number;
+    let _moduleOpts:any;
     
-    export interface IModuleDefination{
-        deps?:Array<string|ISourceOpts>;
-        imports?:Array<string|ISourceOpts>;
-        lang?:string;
-        define?:Function;
-    }
-    class Module {
-        scripts:any;
-        stylesheets:any;
-        opts:ISourceOpts;
-        url:string;
-        alias:string;
-        _lang?:Object;
+    
+    class Module implements IModule {
+        id?:string;
+        ref_count:number;
+        viewTemplate?:HTMLElement;
+        texts?:{[index:string]:string};
+        data:any;
         imports:Array<any>;
         defineProc:Function;
         value?:any;
-        
+        _disposing:Array<Function>;
         _callbacks:Array<Function>;
-        controllerElement:HTMLScriptElement;
         error:any;
-
-        constructor(opts:IModuleDefination|string){
-            //this.alias =opts.alias;
-            //this.url = opts.url;
-            
+        activeTime:Date;
+        static cache:{[index:string]:Module} = {}
+        constructor(idOrOpts:IModuleOpts|string,callback?:ILoadCallback){
+            let opts:IModuleOpts;
+            if(typeof idOrOpts ==="string"){
+                this.id = idOrOpts.toString();
+            }else{
+                opts = idOrOpts as IModuleOpts;
+                this.id = opts.id;
+            }
+            this.ref_count = 0;
+            this._disposing = [];
+            this._callbacks = [];
+            this.data = {};
+            this.activeTime = new Date();
+            if(this.id){
+                Module.cache[this.id] = this;
+                if(!_moduleTick)_moduleTick = setInterval(clearExpireModule,60000);
+            }
+            if(opts) this._init(opts);
+            else this._getOpts(idOrOpts.toString(),callback);
         }
-        define(dfd:IModuleDefination,defineFunc?:Function){
+
+        private _getOpts(url:string,callback?:ILoadCallback){
             let me :Module = this;
-            this.defineProc = defineFunc|| dfd.define;
+            platform.getContent(url,function(html,error){
+                let elem = document.createElement("div");
+                
+                elem.innerHTML = html;
+                let script:HTMLScriptElement;
+                for(let i =0,j=elem.childNodes.length;i<j;i++){
+                    let el:HTMLElement = elem.childNodes[i] as HTMLElement;
+                    let mAttr = el.getAttribute("y-module");
+                    if(mAttr!==undefined){
+                        elem.removeChild(el);
+                        script = el as HTMLScriptElement;
+                        break;
+                    }
+                }
+                if(script===undefined){
+                    if(callback)callback(undefined,"no module define script");
+                    else throw "no module define script";
+                }
+                if(script.src){
+                    new Source({url:script.src,type:"js"},function(scriptElem,error){
+                        if(error){
+                            if(callback)callback(undefined,error);
+                            else throw error;
+                            return;
+                        }
+                        me.viewTemplate = elem;
+                        (me.callback(callback) as Module)._init(_moduleOpts);
+                    });
+                }else{
+                    let code:string = "(function(){" + script.innerHTML + "})();";
+                    try{
+                        eval(code);
+                    }catch(ex){
+                        if(callback)callback(undefined,ex);
+                        else throw ex;
+                        return;
+                    }
+                    me.viewTemplate = elem;
+                    (me.callback(callback) as Module)._init(_moduleOpts);
+                }
+            });
+        }
+
+
+        
+        protected _init(opts?:IModuleOpts){
+            opts || (opts=_moduleOpts);
+            if(!this._callbacks){
+                throw "cannot invoke init when the init method is not done.";
+            }
+            
+            let me :Module = this;
+            this.defineProc = opts.define;
             let depScripts:Array<Source> = [];
             let throughout:boolean = false;
             let waitingCount = 0;
-            let deps = dfd.deps;
+            let deps = opts.deps;
             if(deps){
                 for(let i=0,j=deps.length;i<j;i++){
                     if(this.error)return;
                     waitingCount++;
                     let dep = deps[i];
-                    loadSource(dep ,function(value,err){
+                    Source.load(dep ,function(value,err){
                         if(err) {  me.error = err;return; }
                         if(me.error ||(--waitingCount==0 && throughout)) me._done();
                     });
                 }
             }
             let args = [];
-            deps = dfd.imports;
+            deps = opts.imports;
             if(deps){
                 for(let i=0,j=deps.length;i<j;i++){
                     if(this.error)return;
                     waitingCount++;
                     let dep = deps[i];
-                    loadSource(dep ,function(value,err){
+                    Source.load(dep ,function(value,err){
                         if(err) {  me.error = err;return; }
                         else {args.push(value);}
                         if(me.error ||(--waitingCount==0 && throughout)) me._done();
                     });
                 }
             }
-            if(dfd.lang){
-                let url :string = dfd.lang.replace("{language}",langId);
+            if(opts.lang){
+                let url :string = opts.lang.replace("{language}",langId);
                 waitingCount++;
                 new Source(url,function(value,error){
-                    me._lang = value;
+                    me.texts = value;
                     if(me.error ||(--waitingCount==0 && throughout)) me._done();
                 });
             }
@@ -369,63 +489,72 @@ export namespace Y {
             if(me.error ||(--waitingCount==0 && throughout)) me._done();
             
         }
-        private _done():void{
-            this.value = this.defineProc.apply(this,this.imports);
+        callback(handle:ILoadCallback):IModule{
+            if(!handle) return this;
+            if(this._callbacks===undefined){handle.call(this,this.value,this.error);}
+            else this._callbacks.push(handle);
+            return this;
+        }
+        protected _done():void{
+            if(this.defineProc)this.value = this.defineProc.apply(this,this.imports);
             let callbacks = this._callbacks;this._callbacks = undefined;
             if(callbacks)for(let i=0,j=callbacks.length;i<j;i++){
                 callbacks[i].call(this,this,this.error);
             }
             
         }
-
-        public refresh():void{
-            if(this._callbacks===null) return;
-            let callbacks :Array<Function> = this._callbacks;
-            this._callbacks = null;
-            this.error = undefined;
-            this.controllerElement = undefined;
-            let me :Module = this;
-            platform.getContent(this.url,function(content,error){
-                if(error){platform.alert(error);return;}
-                let container = document.createElement("div");
-                container.innerHTML = content;
-                let at:number =0;let waitingCount :number = 0;
-                for(let i =0,j= container.childNodes.length;i<j;i++){
-                    let depElem :HTMLElement = container.childNodes[at] as HTMLElement;
-                    let tagName:string = depElem.tagName;
-                    let type :string = tagName == "SCRIPT"?"js":(tagName=="LINK"?"css":null);
-                    if( type ){
-                        let ctrl : string = depElem.getAttribute("y-controller");
-                        let url :string = depElem.getAttribute("src") || depElem.getAttribute("href");
-                        if(!url){ this.controllerElement = depElem; at++; continue;}
-                        let alias :string = depElem.getAttribute("y-alias");
-                        
-                        let isScoped:string = depElem.getAttribute("y-module-scope");
-                        waitingCount++;
-                        moduleManager.loadSource({
-                            alias:alias,
-                            url:url,
-                            isScoped: isScoped,
-                            isController:ctrl,
-                            callback:function(elem,error){
-                                if(error) {platform.alert(me.error = error);return;}
-                                if(--waitingCount==0){
-                                    me._done(callbacks);
-                                }
-                            }
-                        });
-                    }
-                }
-            });
+        disposing(handler:Function):IModule{
+            if(this._disposing){
+                this._disposing.push(handler);
+            }else throw "disposed";
+            return this;
         }
-        
+
         dispose():void{
-            for(var n in this.stylesheets){
-                var stylesheet = this.stylesheets[n];
-                stylesheet.dispose();
+            if(this._disposing===undefined)return;
+            for(var n in this._disposing){
+                var fn = this._disposing[n];
+                fn.call(this);
+            }
+        }
+        static load(url:string,callback:ILoadCallback):void{
+            let module :Module = moduleCache[url];
+            if(module){
+                module.activeTime = new Date();
+                module.callback(callback);
+                return;
+            }else{
+                module = new Module(url);
+                
             }
         }
     }
+    
+    export function module(opts:IModuleOpts){
+        _moduleOpts = opts;
+    }
+    
+    
+    function clearExpireModule(){
+        let expireTime :number = (new Date()).valueOf() - 1000*60*5;
+        let cache:{[index:string]:Module}={};
+        let count:number = 0;
+        for(let n in moduleCache){
+            let module = moduleCache[n];
+            if(module.ref_count<=0 && module.activeTime.valueOf()<expireTime){
+                module.dispose();
+            }else{ cache[n] = module;count++;}
+        }
+        moduleCache = cache;
+        if(count===0) {
+            clearInterval(_moduleTick);
+            _moduleTick = undefined;
+        }
+    }
+
+    
+
+
     
 
     ////////////////////////////////////
@@ -919,33 +1048,45 @@ export namespace Y {
     /////////////////////////////////////////////////
     // View
     //////////////////////////////////////////////////
-    export class View{
+    export class View implements IView{
         element:HTMLElement;
+        _html:string;
         model:Model;
         controller:IController;
         _bind:IBind;
-        proto : View;
         constructor(controller?:IController,model?:Model,element?:HTMLElement){
             if(controller===undefined) return;
             this.element = element;
             this.model = model ||(model= new Model());
             this.controller = controller;
             this._bind = makeBind(this.model,this.element,this.controller);
-            this.proto = this;
         }
-        clone(controller:IController,model?:Model):View{
+        clone(controller?:IController,model?:Model,element?:HTMLElement):IView{
             let other:View =  new View();
             let proto:View = this;
-            other.element = platform.cloneNode(proto.element);
-            other.model = model ===undefined?proto.model.clone():model;
-            other.controller = controller;
-            other.proto = proto;
+            let elem:HTMLElement = platform.cloneNode(proto.element);
+            if(element){
+                element.innerHTML = "";
+                for(let i =0,j=elem.childNodes.length;i<j;i++){
+                    element.appendChild(elem.firstChild);
+                }
+                this.element = element;
+            }else this.element = elem;
+            if(model===null){
+                other.model = this.model;
+            }else if(model === undefined){
+                other.model = proto.model.clone();
+            }else other.model = model;
             other._bind = proto._bind;
-            other._bind(other.model,other.element,other.controller);
+            if(controller){
+                other.controller = controller;
+                other._bind(other.model,other.element,other.controller);
+            }
+            
             return other;
         }
         dispose():void{
-            this.proto = undefined;
+            this.element = undefined;
             this.model = undefined;
             this._bind = undefined;
             this.controller = undefined;
@@ -1526,89 +1667,125 @@ export namespace Y {
     }
 
     let eachBinder:IBinder = binders["each"] = function (element:HTMLElement, accessor:IModelAccessor,extra?:any) {
-            let controller:IController = extra as IController;
-            let model :Model = accessor.$model;
-            let eachId:string = element.getAttribute("y-each-view-id");
-            let itemViewProto:IView;
-            if(eachId){
-                itemViewProto = controller.module.views[eachId];
+        let controller:IController = extra as IController;
+        let model :Model = accessor.$model;
+        let eachId:string = element.getAttribute("y-each-view-id");
+        let itemViewProto:IView;
+        if(eachId){
+            itemViewProto = controller.module.data["y-views"][eachId];
+        }else{
+            eachId = seed().toString();
+            element.setAttribute("y-each-bind-id",eachId);
+            var elemProto:HTMLElement = platform.cloneNode(element);
+            let modelProto : Model = model.itemProto().$model;
+            let bind :IBind = makeBind(modelProto,element,controller);
+            itemViewProto = new View(controller,modelProto,elemProto);
+            controller.module.data["y-views"][eachId] = itemViewProto;
+        }
+            
+        let addItemToView = function(item:Model,anchorElement:HTMLElement):void{
+            let itemView:IView = itemViewProto.clone(controller,item);
+            let elem :HTMLElement = itemView.element;
+            if(anchorElement==null) {
+                for(let i=0,j=elem.childNodes.length;i<j;i++){
+                     element.appendChild(elem.childNodes[i]);
+                }
             }else{
-                eachId = seed().toString();
-                element.setAttribute("y-each-bind-id",eachId);
-                var elemProto:HTMLElement = platform.cloneNode(element);
-                let modelProto : Model = model.itemProto().$model;
-                let bind :IBind = makeBind(modelProto,element,controller);
-                itemViewProto = new View(controller,modelProto,elemProto);
-                controller.module.views[eachId] = itemViewProto;
+                for(let i=0,j=elem.childNodes.length;i<j;i++){
+                    element.insertBefore(elem.firstChild,anchorElement);
+                }
+
             }
+        }    
 	        
-	        
-            
-            let addItemToView = function(item:Model,anchorElement:HTMLElement):void{
-                let itemView:IView = itemViewProto.clone(controller,item);
-                let elem :HTMLElement = itemView.element;
-                if(anchorElement==null) {
-                    for(let i=0,j=elem.childNodes.length;i<j;i++){
-                        element.appendChild(elem.childNodes[i]);
-                    }
-                }else{
-                    for(let i=0,j=elem.childNodes.length;i<j;i++){
-                        element.insertBefore(elem.firstChild,anchorElement);
-                    }
-
+		var handler = function (sender,evt:ModelEvent) {
+            if(evt.action == ModelActions.change){
+                 element.innerHTML="";
+                for(let i=0,j=evt.value.length;i<j;i++){
+                    let item :Model = model.getItem(i,true);
+                    addItemToView(item,null);
                 }
-            }    
-	        
-			var handler = function (sender,evt:ModelEvent) {
-                if(evt.action == ModelActions.change){
+                return;
+            }
+            if(evt.action== ModelActions.clear){
+                element.innerHTML = "";
+                return;
+            }
+            if(evt.action != ModelActions.child){
+                return;
+            }
+            let ievt = evt.directSource;
+            let elemProto = itemViewProto.element;
+	        switch (ievt.action) {
+                case ModelActions.add:
+                    let anchorElement:HTMLElement = null;
+                    if(evt.index*elemProto.childNodes.length<=element.childNodes.length-1)anchorElement = element.childNodes[evt.index] as HTMLElement;
+                    addItemToView(model.getItem(evt.index,true),anchorElement);
+                    break;
+                case ModelActions.remove:
+                    let at :number = evt.index*elemProto.childNodes.length;
+                    for(let i=0,j=elemProto.childNodes.length;i<j;i++){
+                        let ch:Node = element.childNodes[at];
+                        if(ch==null) break;
+                        element.removeChild(ch);
+                    }
+                    break;
+	            case ModelActions.clear:
                     element.innerHTML="";
-                    for(let i=0,j=evt.value.length;i<j;i++){
-                        let item :Model = model.getItem(i,true);
-                        addItemToView(item,null);
-                    }
-                    return;
-                }
-                if(evt.action== ModelActions.clear){
-                    element.innerHTML = "";
-                    return;
-                }
-                if(evt.action != ModelActions.child){
-                    return;
-                }
-                let ievt = evt.directSource;
-                let elemProto = itemViewProto.element;
-	            switch (ievt.action) {
-                    case ModelActions.add:
-                        let anchorElement:HTMLElement = null;
-                        if(evt.index*elemProto.childNodes.length<=element.childNodes.length-1)anchorElement = element.childNodes[evt.index] as HTMLElement;
-                        addItemToView(model.getItem(evt.index,true),anchorElement);
-                        break;
-                    case ModelActions.remove:
-                        let at :number = evt.index*elemProto.childNodes.length;
-                        for(let i=0,j=elemProto.childNodes.length;i<j;i++){
-                            let ch:Node = element.childNodes[at];
-                            if(ch==null) break;
-                            element.removeChild(ch);
-                        }
-                        break;
-	                case ModelActions.clear:
-                        element.innerHTML="";
-                        break;
-	            }
+                    break;
 	        }
-			model.subscribe(handler);
-            
-
-			element.innerHTML = "";
-			return function () {
-			    //TODO : 应该要重新构建，而不是清空
-			    model["@model.props"] = {};
-			    model.unsubscribe(handler);
-			}
 	    }
-    
-    let o2Str:Function = Object.prototype.toString;
+		model.subscribe(handler);
+		element.innerHTML = "";
+		return function () {
+			//TODO : 应该要重新构建，而不是清空
+			model["@model.props"] = {};
+			model.unsubscribe(handler);
+		}
+	}//end eachBind
 
+    export interface IControllerOpts{
+        url:string;
+        element:HTMLElement;
+        callback:ILoadCallback;
+    }
+
+    export function controller(opts:IControllerOpts){
+        Module.load(opts.url,function(proto,error){
+            if(error){
+                opts.callback(undefined,error);
+                return;
+            }
+            let module :IModule = this as IModule;
+
+            let controllerType =module.data["y-controllerType"];
+            if(!controllerType){
+                controllerType = proto;
+                if(typeof proto === "object"){
+                    controllerType = function(){};
+                    controllerType.prototype = proto;
+                }
+                module.data["y-controllerType"] = controllerType;
+                
+            }
+            let controller :IController= new controllerType() as IController;
+            controller.module = module;
+            let view :IView = module.data["y-mainView"] as IView;
+            if(!view){
+                 view = new View(controller,undefined,opts.element);
+                 module.data["y-views"] = [];
+                 module.data["y-mainView"] = view.clone(undefined,null,undefined);
+            }else{
+                view = view.clone(controller,null,opts.element);
+            }
+            controller.view = view;
+            controller.model = view.model.$accessor;
+            controller.load(controller.model,controller.view);
+                    
+        });
+    }
+    
+    
 
     
     let _seed = 0;
