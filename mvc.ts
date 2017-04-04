@@ -1780,8 +1780,7 @@ export namespace Y {
             }
             controller.view = view;
             controller.model = view.model.$accessor;
-            controller.load(controller.model,controller.view);
-                    
+            controller.load(controller.model,controller.view);        
         });
     }
     
