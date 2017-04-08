@@ -1750,7 +1750,7 @@ export namespace Y {
         callback:ILoadCallback;
     }
 
-    export function controller(opts:IControllerOpts){
+    export function controll(opts:IControllerOpts){
         Module.load(opts.url,function(proto,error){
             if(error){
                 opts.callback(undefined,error);
