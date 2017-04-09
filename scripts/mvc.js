@@ -7,6 +7,14 @@ var __extends = (this && this.__extends) || function (d, b) {
 var Y;
 (function (Y) {
     "use strict";
+    var SourceTypes;
+    (function (SourceTypes) {
+        SourceTypes[SourceTypes["script"] = 0] = "script";
+        SourceTypes[SourceTypes["css"] = 1] = "css";
+        SourceTypes[SourceTypes["json"] = 2] = "json";
+        SourceTypes[SourceTypes["text"] = 3] = "text";
+        SourceTypes[SourceTypes["image"] = 4] = "image";
+    })(SourceTypes = Y.SourceTypes || (Y.SourceTypes = {}));
     ////////////////////////////////////
     /// 平台抽象
     ///////////////////////////////////
@@ -44,6 +52,28 @@ var Y;
             var html = elem.outerHTML + "";
             ctn.innerHTML = html;
             return ctn.firstChild;
+        };
+        Platform.prototype.getElement = function (selector, context) {
+            if (typeof selector === "string") {
+                var cssText = selector;
+                var firstChar = cssText[0];
+                if (firstChar === "#")
+                    return document.getElementById(cssText.substr(1));
+                if (firstChar === ".") {
+                    context || (context = document);
+                    var rs = context.getElementsByClassName(cssText.substr(1));
+                    if (rs !== null && rs.length)
+                        return rs[0];
+                }
+                else {
+                    context || (context = document);
+                    var rs = context.getElementsByTagName(cssText);
+                    if (rs !== null && rs.length)
+                        return rs[0];
+                }
+            }
+            else
+                return selector;
         };
         //获取内容
         Platform.prototype.getContent = function (url, callback) {
@@ -155,26 +185,28 @@ var Y;
                 _opts = { url: opts, alias: opts, type: undefined, callback: callback };
                 var url = opts;
                 if (url.lastIndexOf(".js"))
-                    _opts.type = "js";
+                    _opts.type = SourceTypes.script;
                 else if (url.lastIndexOf(".css"))
-                    _opts.type = "css";
+                    _opts.type = SourceTypes.css;
                 else if (url.lastIndexOf(".json"))
-                    _opts.type = "json";
+                    _opts.type = SourceTypes.json;
             }
             this.url = _opts.url;
             this.type = _opts.type;
-            this.alias = _opts.alias;
-            if (_opts.value === undefined) {
-                this.value = _opts.value;
-            }
-            else {
-                this._callbacks = [];
-            }
+            this.alias = _opts.alias || this.url;
+            this.extras = _opts.extras;
             if (callback)
                 this.callback(callback);
             if (_opts.callback)
                 this.callback(_opts.callback);
-            this.refresh();
+            if (_opts.value !== undefined) {
+                this.value = _opts.value;
+                this._done(this.value, undefined);
+            }
+            else {
+                this._callbacks = [];
+                this.refresh();
+            }
         }
         Source.prototype.callback = function (handle) {
             if (this._callbacks === undefined) {
@@ -196,9 +228,9 @@ var Y;
         };
         Source.prototype.refresh = function () {
             if (!this.url)
-                return;
+                return this;
             var me = this;
-            if (this.type == "json") {
+            if (this.type == SourceTypes.json) {
                 Y.platform.getContent(this.url, function (content, error) {
                     if (!error)
                         me._done(JSON.parse(content), error);
@@ -207,7 +239,7 @@ var Y;
                 });
                 return me;
             }
-            if (this.type != "js" && this.type != "css") {
+            if (this.type != SourceTypes.css && this.type != SourceTypes.script) {
                 Y.platform.getContent(this.url, function (content, error) {
                     me._done(content, error);
                 });
@@ -216,12 +248,12 @@ var Y;
             if (this.element)
                 this.element.parentNode.removeChild(this.element);
             var elem;
-            if (this.type == "js") {
+            if (this.type == SourceTypes.script) {
                 elem = document.createElement("script");
                 elem.src = this.url;
                 elem.type = "text/javascript";
             }
-            else if (this.type == "css") {
+            else if (this.type == SourceTypes.css) {
                 elem = document.createElement("link");
                 elem.href = this.url;
                 elem.type = "text/css";
@@ -243,12 +275,13 @@ var Y;
                     me._callbacks = undefined;
                 };
             elem.onerror = function (ex) {
+                _exports = undefined;
+                me._callbacks = undefined;
+                elem.parentNode.removeChild(elem);
                 for (var i = 0, j = me._callbacks.length; i < j; i++) {
                     var item = me._callbacks[i];
                     item.call(me, _exports, me.error);
                 }
-                _exports = undefined;
-                me._callbacks = undefined;
             };
             var myhead = head;
             if (myhead == null) {
@@ -269,25 +302,68 @@ var Y;
         Source.load = function (opts, callback) {
             var isUrl = typeof opts === "string";
             var name = isUrl ? opts : (opts.alias || opts.url);
-            var source = Y.sourceCache[name];
+            if (isUrl) {
+                name = opts;
+            }
+            else {
+                var _opts = opts;
+                if (_opts.nocache === true)
+                    return new Source(opts, callback);
+                name = (_opts.alias || _opts.url);
+            }
+            var source = Source.cache[name];
             if (!source) {
                 source = new Source(opts, callback);
-                Y.sourceCache[name] = source;
+                if (source.url) {
+                    Source.cache[source.url] = source;
+                }
+                if (source.alias) {
+                    Source.cache[source.alias] = source;
+                }
             }
             else if (callback)
                 source.callback(callback);
             return source;
         };
+        Source.loadMany = function (opts, nocache, callback) {
+            var _this = this;
+            var result = {};
+            if (typeof nocache === "function") {
+                callback = nocache;
+                nocache = false;
+            }
+            var waitingCount = 1;
+            var hasError;
+            for (var n in opts) {
+                if (hasError)
+                    break;
+                var srcOpts = opts[n];
+                if (typeof srcOpts === "string")
+                    srcOpts = { url: srcOpts, nocache: nocache, extras: n };
+                Source.load(srcOpts, function (value, error) {
+                    if (hasError)
+                        return;
+                    if (error) {
+                        hasError = error;
+                        return;
+                    }
+                    var src = _this;
+                    result[src.extras] = src;
+                    if (--waitingCount == 0 && callback)
+                        callback(result, undefined);
+                });
+            }
+            if (--waitingCount == 0 && callback)
+                callback(result, undefined);
+            return result;
+        };
         return Source;
     }());
+    Source.cache = {};
     Y.Source = Source;
-    Y.sourceCache = {};
     ////////////////////////////////////
     /// 模块化
     ////////////////////////////////////
-    Y.moduleCache = {};
-    var _moduleTick;
-    var _moduleOpts;
     var Module = (function () {
         function Module(idOrOpts, callback) {
             var opts;
@@ -301,50 +377,88 @@ var Y;
             this.ref_count = 0;
             this._disposing = [];
             this._callbacks = [];
-            this.data = {};
+            if (opts)
+                this.data = opts.data;
+            if (!this.data)
+                this.data = {};
             this.activeTime = new Date();
             if (this.id) {
                 Module.cache[this.id] = this;
-                if (!_moduleTick)
-                    _moduleTick = setInterval(clearExpireModule, 60000);
+                if (!Module.clearTimer)
+                    Module.clearTimer = setInterval(Module.clearExpired, Module.clearInterval || 60000);
             }
+            if (callback)
+                this.callback(callback);
             if (opts)
                 this._init(opts);
             else
-                this._getOpts(idOrOpts.toString(), callback);
+                this._getOptsAndInit(idOrOpts.toString());
         }
-        Module.prototype._getOpts = function (url, callback) {
+        Module.prototype._getOptsAndInit = function (url) {
             var me = this;
             Y.platform.getContent(url, function (html, error) {
                 var elem = document.createElement("div");
+                html = html.replace("<!DOCTYPE html>", "")
+                    .replace(/<html\s/i, "<div ")
+                    .replace(/<\/html>/i, "<div ")
+                    .replace(/<head\s/i, "<div class='y-head' ")
+                    .replace(/<\/head>/i, "</div>")
+                    .replace(/<body\s/i, "<div class='y-body' ")
+                    .replace(/<\/body>/i, "</div>");
                 elem.innerHTML = html;
+                var deps = [];
+                var scripts = elem.getElementsByTagName("script");
                 var script;
-                for (var i = 0, j = elem.childNodes.length; i < j; i++) {
-                    var el = elem.childNodes[i];
-                    var mAttr = el.getAttribute("y-module");
-                    if (mAttr !== undefined) {
-                        elem.removeChild(el);
-                        script = el;
-                        break;
+                var links = elem.getElementsByTagName("link");
+                for (var i = 0, j = scripts.length; i < j; i++) {
+                    var sElem = scripts[i];
+                    var src = sElem.getAttribute("src");
+                    var isModule = sElem.getAttribute("y-module");
+                    if (isModule) {
+                        script = sElem;
+                        sElem.parentNode.removeChild(sElem);
                     }
+                    if (!src)
+                        continue;
+                    var alias = script.getAttribute("y-alias");
+                    var scriptOpts = {
+                        url: src,
+                        alias: alias || src,
+                        type: SourceTypes.script
+                    };
+                    deps.push(scriptOpts);
+                    sElem.parentNode.removeChild(sElem);
                 }
+                for (var i = 0, j = links.length; i < j; i++) {
+                    var sElem = links[i];
+                    var src = sElem.getAttribute("href");
+                    if (!src)
+                        continue;
+                    var alias = script.getAttribute("y-alias");
+                    var cssOpts = {
+                        url: src,
+                        alias: alias || src,
+                        type: SourceTypes.css
+                    };
+                    deps.push(cssOpts);
+                    sElem.parentNode.removeChild(sElem);
+                }
+                var moOpts = {
+                    template: elem,
+                    deps: deps
+                };
                 if (script === undefined) {
-                    if (callback)
-                        callback(undefined, "no module define script");
-                    else
-                        throw "no module define script";
+                    return me._init(moOpts);
                 }
                 if (script.src) {
-                    new Source({ url: script.src, type: "js" }, function (scriptElem, error) {
+                    new Source({ url: script.src, type: SourceTypes.script }, function (scriptElem, error) {
                         if (error) {
-                            if (callback)
-                                callback(undefined, error);
-                            else
-                                throw error;
+                            me.error = error;
+                            me._done();
                             return;
                         }
-                        me.viewTemplate = elem;
-                        me.callback(callback)._init(_moduleOpts);
+                        moOpts = this._combineModuleOpts(moOpts);
+                        me._init(moOpts);
                     });
                 }
                 else {
@@ -353,27 +467,43 @@ var Y;
                         eval(code);
                     }
                     catch (ex) {
-                        if (callback)
-                            callback(undefined, ex);
-                        else
-                            throw ex;
-                        return;
+                        me.error = ex;
+                        return me._done();
                     }
-                    me.viewTemplate = elem;
-                    me.callback(callback)._init(_moduleOpts);
+                    moOpts = this.combineModuleOpts(moOpts);
+                    me._init(moOpts);
                 }
             });
         };
-        Module.prototype._init = function (opts) {
-            opts || (opts = _moduleOpts);
-            if (!this._callbacks) {
-                throw "cannot invoke init when the init method is not done.";
+        Module.prototype._combineModuleOpts = function (dest, src) {
+            src || (src = Module.exportModuleOpts);
+            if (!src) {
+                this.error = "未定义module";
+                return this._done();
             }
+            else {
+                Module.exportModuleOpts = undefined;
+            }
+            dest.define = src.define;
+            dest.lang = src.lang;
+            dest.data = src.data;
+            var _deps = src.deps;
+            if (_deps) {
+                if (!dest.deps)
+                    dest.deps = [];
+                for (var i = 0, j = _deps.length; i < j; i++) {
+                    dest.deps.push(_deps[i]);
+                }
+            }
+            dest.imports = src.imports;
+            return dest;
+        };
+        Module.prototype._init = function (opts) {
             var me = this;
             this.defineProc = opts.define;
+            this.viewTemplate = opts.template;
             var depScripts = [];
-            var throughout = false;
-            var waitingCount = 0;
+            var waitingCount = 1;
             var deps = opts.deps;
             if (deps) {
                 for (var i = 0, j = deps.length; i < j; i++) {
@@ -386,7 +516,7 @@ var Y;
                             me.error = err;
                             return;
                         }
-                        if (me.error || (--waitingCount == 0 && throughout))
+                        if (me.error || (--waitingCount == 0))
                             me._done();
                     });
                 }
@@ -404,11 +534,9 @@ var Y;
                             me.error = err;
                             return;
                         }
-                        else {
-                            args.push(value);
-                        }
-                        if (me.error || (--waitingCount == 0 && throughout))
+                        if (me.error || (--waitingCount == 0))
                             me._done();
+                        args.push(value);
                     });
                 }
             }
@@ -417,13 +545,12 @@ var Y;
                 waitingCount++;
                 new Source(url, function (value, error) {
                     me.texts = value;
-                    if (me.error || (--waitingCount == 0 && throughout))
+                    if (me.error || (--waitingCount == 0))
                         me._done();
                 });
             }
             this.imports = args;
-            throughout = true;
-            if (me.error || (--waitingCount == 0 && throughout))
+            if (me.error || (--waitingCount == 0))
                 me._done();
         };
         Module.prototype.callback = function (handle) {
@@ -437,13 +564,13 @@ var Y;
             return this;
         };
         Module.prototype._done = function () {
-            if (this.defineProc)
+            if (this.defineProc && this.error === undefined)
                 this.value = this.defineProc.apply(this, this.imports);
             var callbacks = this._callbacks;
             this._callbacks = undefined;
             if (callbacks)
                 for (var i = 0, j = callbacks.length; i < j; i++) {
-                    callbacks[i].call(this, this, this.error);
+                    callbacks[i].call(this, this.value, this.error);
                 }
         };
         Module.prototype.disposing = function (handler) {
@@ -463,43 +590,46 @@ var Y;
             }
         };
         Module.load = function (url, callback) {
-            var module = Y.moduleCache[url];
+            var module = Module.cache[url];
             if (module) {
                 module.activeTime = new Date();
                 module.callback(callback);
                 return;
             }
             else {
-                module = new Module(url);
+                module = new Module(url, callback);
+            }
+        };
+        Module.define = function (opts) {
+            Module.exportModuleOpts = opts;
+        };
+        Module.clearExpired = function () {
+            var expireTime = (new Date()).valueOf() - Module.aliveMilliseconds || 300000;
+            var cache = {};
+            var moduleCache = Module.cache;
+            var count = 0;
+            for (var n in moduleCache) {
+                var module_1 = moduleCache[n];
+                if (module_1.ref_count <= 0 && module_1.activeTime.valueOf() < expireTime) {
+                    module_1.dispose();
+                }
+                else {
+                    cache[n] = module_1;
+                    count++;
+                }
+            }
+            Module.cache = cache;
+            if (count === 0) {
+                clearInterval(Module.clearTimer);
+                Module.clearTimer = undefined;
             }
         };
         return Module;
     }());
     Module.cache = {};
-    function module(opts) {
-        _moduleOpts = opts;
-    }
-    Y.module = module;
-    function clearExpireModule() {
-        var expireTime = (new Date()).valueOf() - 1000 * 60 * 5;
-        var cache = {};
-        var count = 0;
-        for (var n in Y.moduleCache) {
-            var module_1 = Y.moduleCache[n];
-            if (module_1.ref_count <= 0 && module_1.activeTime.valueOf() < expireTime) {
-                module_1.dispose();
-            }
-            else {
-                cache[n] = module_1;
-                count++;
-            }
-        }
-        Y.moduleCache = cache;
-        if (count === 0) {
-            clearInterval(_moduleTick);
-            _moduleTick = undefined;
-        }
-    }
+    Module.clearInterval = 60000;
+    Module.aliveMilliseconds = 300000;
+    Y.module = Module.define;
     ////////////////////////////////////
     /// Model
     ///////////////////////////////////
@@ -1756,12 +1886,19 @@ var Y;
         };
     }; //end eachBind
     function controll(opts) {
+        var area = (opts.area) ? Y.platform.getElement(opts.area) : null;
         Module.load(opts.url, function (proto, error) {
             if (error) {
                 opts.callback(undefined, error);
                 return;
             }
             var module = this;
+            if (proto === undefined) {
+                if (area && this.viewTemplate) {
+                    area.innerHTML = this.viewTemplate.innerHTML;
+                }
+                return;
+            }
             var controllerType = module.data["y-controllerType"];
             if (!controllerType) {
                 controllerType = proto;
@@ -1775,15 +1912,18 @@ var Y;
             controller.module = module;
             var view = module.data["y-mainView"];
             if (!view) {
-                view = new View(controller, undefined, opts.area);
+                view = new View(controller, undefined, area);
                 module.data["y-views"] = [];
                 module.data["y-mainView"] = view.clone(undefined, null, undefined);
             }
             else {
-                view = view.clone(controller, null, opts.area);
+                view = view.clone(controller, null, area);
             }
             controller.view = view;
             controller.model = view.model.$accessor;
+            var remotes = module.data["controller.data"];
+            if (remotes) {
+            }
             controller.load(controller.model, controller.view);
             if (opts.callback)
                 opts.callback(controller);

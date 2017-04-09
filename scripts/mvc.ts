@@ -127,6 +127,7 @@ export namespace Y {
         //获取内容
         getContent(url:string,callback:Function):void;
         cloneNode(element:HTMLElement):HTMLElement;
+        getElement(selector:any,context?:any):HTMLElement;
     }
     
     ////////////////////////////////////
@@ -165,10 +166,26 @@ export namespace Y {
 	        tagContainers["THEAD"] = tagContainers["TFOOT"] = tagContainers.TBODY;
 	        tagContainers["DD"] = tagContainers.DT;
             }
-            var ctn = tagContainers[tag] || tagContainers[""];
-            var html = elem.outerHTML + "";
+            let ctn = tagContainers[tag] || tagContainers[""];
+            let html = elem.outerHTML + "";
             ctn.innerHTML = html;
 	        return ctn.firstChild as HTMLElement;
+        }
+        getElement(selector:any,context?:any):HTMLElement{
+            if(typeof selector ==="string"){
+                let cssText = selector as string;
+                let firstChar = cssText[0];
+                if(firstChar==="#") return document.getElementById(cssText.substr(1));
+                if(firstChar===".") {
+                    context || (context = document);
+                    let rs = (context as HTMLElement).getElementsByClassName(cssText.substr(1));
+                    if(rs!==null && rs.length) return rs[0] as HTMLElement;
+                }else {
+                    context || (context = document);
+                    let rs = (context as HTMLElement).getElementsByTagName(cssText);
+                    if(rs!==null && rs.length) return rs[0] as HTMLElement;
+                }
+            }else return selector;
         }
         //获取内容
         getContent(url:string,callback:Function):void{
@@ -406,7 +423,7 @@ export namespace Y {
             }else if(callback) source.callback(callback);
             return source;
         }
-        public static loadMany(opts:{[index:string]:ISourceOpts|string},nocache?:boolean|Function,callback?:Function):{[index:string]:Source}{
+        public static loadMany(opts:{[index:string]:ISourceOpts|string}|Array<ISourceOpts|string>,nocache?:boolean|Function,callback?:Function):{[index:string]:Source}{
             let result:{[index:string]:Source} = {};
             if(typeof nocache==="function"){
                 callback = nocache;
@@ -453,10 +470,11 @@ export namespace Y {
         error:any;
         activeTime:Date;
         static cache:{[index:string]:Module} = {}
-        constructor(idOrOpts:IModuleOpts|string,callback?:ILoadCallback){
+        public constructor(idOrOpts:IModuleOpts|string,callback?:ILoadCallback){
             let opts:IModuleOpts;
             if(typeof idOrOpts ==="string"){
                 this.id = idOrOpts.toString();
+               
             }else{
                 opts = idOrOpts as IModuleOpts;
                 this.id = opts.id;
@@ -464,17 +482,19 @@ export namespace Y {
             this.ref_count = 0;
             this._disposing = [];
             this._callbacks = [];
-            this.data = opts.data;
+            if(opts)this.data = opts.data;
+            if(!this.data) this.data = {};
             this.activeTime = new Date();
             if(this.id){
                 Module.cache[this.id] = this;
                 if(!Module.clearTimer)Module.clearTimer = setInterval(Module.clearExpired,Module.clearInterval || 60000);
             }
+            if(callback) this.callback(callback);
             if(opts) this._init(opts);
-            else this._getOptsAndInit(idOrOpts.toString(),callback);
+            else this._getOptsAndInit(idOrOpts.toString());
         }
 
-        private _getOptsAndInit(url:string,callback?:ILoadCallback){
+        private _getOptsAndInit(url:string){
             let me :Module = this;
             platform.getContent(url,function(html,error){
                 let elem = document.createElement("div");
@@ -526,7 +546,7 @@ export namespace Y {
                 };
 
                 if(script===undefined){
-                    me._init(moOpts);
+                    return me._init(moOpts);
                 }
                 if(script.src){
                     new Source({url:script.src,type:SourceTypes.script},function(scriptElem,error){
@@ -572,20 +592,13 @@ export namespace Y {
             }
             dest.imports = src.imports;
             return dest;
-        }
-
-
-        
-        protected _init(opts:IModuleOpts){
-            if(!this._callbacks){
-                throw "cannot invoke init when the init method is not done.";
-            }
-            
+        } 
+        private _init(opts:IModuleOpts){      
             let me :Module = this;
             this.defineProc = opts.define;
+            this.viewTemplate = opts.template;
             let depScripts:Array<Source> = [];
-            let throughout:boolean = false;
-            let waitingCount = 0;
+            let waitingCount = 1;
             let deps = opts.deps;
             if(deps){
                 for(let i=0,j=deps.length;i<j;i++){
@@ -594,7 +607,7 @@ export namespace Y {
                     let dep = deps[i];
                     Source.load(dep ,function(value,err){
                         if(err) {  me.error = err;return; }
-                        if(me.error ||(--waitingCount==0 && throughout)) me._done();
+                        if(me.error ||(--waitingCount==0)) me._done();
                     });
                 }
             }
@@ -607,7 +620,7 @@ export namespace Y {
                     let dep = deps[i];
                     Source.load(dep ,function(value,err){
                         if(err) {  me.error = err;return; }
-                        if(me.error ||(--waitingCount==0 && throughout)) me._done();
+                        if(me.error ||(--waitingCount==0)) me._done();
                         args.push(value);
                     });
                 }
@@ -619,60 +632,59 @@ export namespace Y {
                 waitingCount++;
                 new Source(url,function(value,error){
                     me.texts = value;
-                    if(me.error ||(--waitingCount==0 && throughout)) me._done();
+                    if(me.error ||(--waitingCount==0)) me._done();
                 });
             }
             this.imports = args;
-            throughout = true;
-            if(me.error ||(--waitingCount==0 && throughout)) me._done();
+            if(me.error ||(--waitingCount==0)) me._done();
             
         }
-        callback(handle:ILoadCallback):IModule{
+        public callback(handle:ILoadCallback):IModule{
             if(!handle) return this;
             if(this._callbacks===undefined){handle.call(this,this.value,this.error);}
             else this._callbacks.push(handle);
             return this;
         }
-        protected _done():void{
-            if(this.defineProc)this.value = this.defineProc.apply(this,this.imports);
+        private _done():void{
+            if(this.defineProc && this.error===undefined)this.value = this.defineProc.apply(this,this.imports);
             let callbacks = this._callbacks;this._callbacks = undefined;
             if(callbacks)for(let i=0,j=callbacks.length;i<j;i++){
-                callbacks[i].call(this,this,this.error);
+                callbacks[i].call(this,this.value,this.error);
             }
             
         }
-        disposing(handler:Function):IModule{
+        public disposing(handler:Function):IModule{
             if(this._disposing){
                 this._disposing.push(handler);
             }else throw "disposed";
             return this;
         }
 
-        dispose():void{
+        public dispose():void{
             if(this._disposing===undefined)return;
             for(var n in this._disposing){
                 var fn = this._disposing[n];
                 fn.call(this);
             }
         }
-        static clearTimer:number;
-        static clearInterval:number = 60000;
-        static aliveMilliseconds :number = 300000;
-        static load(url:string,callback:ILoadCallback):void{
+        public static clearTimer:number;
+        public static clearInterval:number = 60000;
+        public static aliveMilliseconds :number = 300000;
+        public static load(url:string,callback:ILoadCallback):void{
             let module :Module = Module.cache[url];
             if(module){
                 module.activeTime = new Date();
                 module.callback(callback);
                 return;
             }else{
-                module = new Module(url);
+                module = new Module(url,callback);
             }
         }
-        static exportModuleOpts;
-        static define(opts:IModuleOpts){
+        public static exportModuleOpts;
+        public static define(opts:IModuleOpts){
             Module.exportModuleOpts = opts;
         }
-        static clearExpired(){
+        public static clearExpired(){
             let expireTime :number = (new Date()).valueOf() - Module.aliveMilliseconds|| 300000;
             let cache:{[index:string]:Module}={};
             let moduleCache:{[index:string]:Module}=Module.cache;
@@ -1883,17 +1895,24 @@ export namespace Y {
 
     export interface IControlOpts{
         url:string;
-        area:HTMLElement;
+        area:HTMLElement|string;
         callback?:ILoadCallback;
     }
 
     export function controll(opts:IControlOpts){
-        Module.load(opts.url,function(proto,error){
+        let area:HTMLElement = (opts.area)?platform.getElement(opts.area):null;
+        Module.load(opts.url,function(this:IModule,proto:any,error?:any):void{
             if(error){
                 opts.callback(undefined,error);
                 return;
             }
             let module :IModule = this as IModule;
+            if(proto===undefined){
+                if(area && this.viewTemplate) {
+                    area.innerHTML = this.viewTemplate.innerHTML;
+                }
+                return;
+            }
 
             let controllerType =module.data["y-controllerType"];
             if(!controllerType){
@@ -1909,11 +1928,11 @@ export namespace Y {
             controller.module = module;
             let view :IView = module.data["y-mainView"] as IView;
             if(!view){
-                 view = new View(controller,undefined,opts.area);
+                 view = new View(controller,undefined,area);
                  module.data["y-views"] = [];
                  module.data["y-mainView"] = view.clone(undefined,null,undefined);
             }else{
-                view = view.clone(controller,null,opts.area);
+                view = view.clone(controller,null,area);
             }
             controller.view = view;
             controller.model = view.model.$accessor;
