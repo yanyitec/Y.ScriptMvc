@@ -7,6 +7,502 @@ var __extends = (this && this.__extends) || function (d, b) {
 var Y;
 (function (Y) {
     "use strict";
+    ////////////////////////////////////
+    /// 平台抽象
+    ///////////////////////////////////
+    var tagContainers;
+    var Platform = (function () {
+        function Platform() {
+            this.attach = window["attachEvent"] ? function (elem, evtname, fn) { elem.attachEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.addEventListener(evtname, fn, false); };
+            this.detech = window["detechEvent"] ? function (elem, evtname, fn) { elem.detechEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.removeEventListener(evtname, fn, false); };
+        }
+        Platform.prototype.attach = function (elem, evtName, evtHandler) { };
+        //解除事件
+        Platform.prototype.detech = function (elem, evtName, evtHandler) { };
+        Platform.prototype.alert = function (message) {
+            window.alert(message);
+        };
+        Platform.prototype.cloneNode = function (elem) {
+            var tag = elem.tagName;
+            if (elem.cloneNode)
+                return elem.cloneNode(true);
+            if (!tagContainers) {
+                tagContainers = {
+                    "": document.createElement("div"),
+                    "LEGEND": document.createElement("fieldset"),
+                    "DT": document.createElement("DL"),
+                    "LI": document.createElement("ul"),
+                    "TR": document.createElement("tbody"),
+                    "TD": document.createElement("tr"),
+                    "TBODY": document.createElement("table"),
+                    "OPTION": document.createElement("select")
+                };
+                tagContainers["THEAD"] = tagContainers["TFOOT"] = tagContainers.TBODY;
+                tagContainers["DD"] = tagContainers.DT;
+            }
+            var ctn = tagContainers[tag] || tagContainers[""];
+            var html = elem.outerHTML + "";
+            ctn.innerHTML = html;
+            return ctn.firstChild;
+        };
+        //获取内容
+        Platform.prototype.getContent = function (url, callback) {
+            this.ajax({
+                url: url,
+                method: "GET",
+                callback: callback
+            });
+        };
+        Platform.prototype.ajax = function (opts) {
+            var http = null;
+            if (window["XMLHttpRequest"]) {
+                http = new XMLHttpRequest();
+                if (http.overrideMimeType)
+                    http.overrideMimeType("text/xml");
+            }
+            else if (window["ActiveXObject"]) {
+                var activeName = ["MSXML2.XMLHTTP", "Microsoft.XMLHTTP"];
+                for (var i = 0; i < activeName.length; i++)
+                    try {
+                        http = new ActiveXObject(activeName[i]);
+                        break;
+                    }
+                    catch (e) { }
+            }
+            if (http == null)
+                throw "Cannot create XmlHttpRequest Object";
+            var url = opts.url;
+            if (!url)
+                throw "require url";
+            var method = opts.method ? opts.method.toUpperCase() : "GET";
+            var data = opts.data;
+            if (typeof data === 'object') {
+                var content = "";
+                for (var n in data) {
+                    content += encodeURIComponent(n) + "=" + encodeURIComponent(data[n]) + "&";
+                }
+                data = content;
+            }
+            if (method == "POST") {
+                http.setRequestHeader("Content-type", "application/x-www-four-urlencoded");
+            }
+            else if (method == "GET") {
+                if (url.indexOf("?")) {
+                    if (data)
+                        url += "&" + data;
+                }
+                else if (data)
+                    url += "?" + data;
+                data = null;
+            }
+            var headers = opts.headers;
+            if (headers)
+                for (var n_1 in headers)
+                    http.setRequestHeader(n_1, headers[n_1]);
+            var httpRequest = http;
+            function callback() {
+                if (httpRequest.readyState == 4 && opts.callback) {
+                    var result = void 0;
+                    if (opts.dataType == "json") {
+                        result = JSON.parse(httpRequest.responseText);
+                    }
+                    else if (opts.dataType == "xml") {
+                        result = httpRequest.responseXML;
+                    }
+                    else
+                        result = httpRequest.responseText;
+                    opts.callback.call(http, result);
+                }
+            }
+            httpRequest.onreadystatechange = callback;
+            if (opts.callback)
+                httpRequest.onerror = function (err) {
+                    opts.callback.call(httpRequest, err);
+                };
+            httpRequest.open(method, url, true);
+            httpRequest.send(data);
+        }; //end ajax
+        return Platform;
+    }());
+    Y.Platform = Platform;
+    Y.platform = new Platform();
+    var o2Str = Object.prototype.toString;
+    function isArray(o) {
+        if (!o)
+            return false;
+        return o2Str.call(o) == "[Object Array]";
+    }
+    Y.isArray = isArray;
+    window["exports"] = {};
+    ////////////////////////////////////
+    /// 多语言化
+    ////////////////////////////////////
+    var langId;
+    function language(lng) {
+        if (langId === lng)
+            return;
+    }
+    Y.language = language;
+    ////////////////////////////////////
+    /// 资源加载
+    ////////////////////////////////////
+    var head;
+    var _exports;
+    var Source = (function () {
+        function Source(opts, callback) {
+            var _opts;
+            if (typeof opts === "string") {
+                _opts = { url: opts, alias: opts, type: undefined, callback: callback };
+                var url = opts;
+                if (url.lastIndexOf(".js"))
+                    _opts.type = "js";
+                else if (url.lastIndexOf(".css"))
+                    _opts.type = "css";
+                else if (url.lastIndexOf(".json"))
+                    _opts.type = "json";
+            }
+            this.url = _opts.url;
+            this.type = _opts.type;
+            this.alias = _opts.alias;
+            if (_opts.value === undefined) {
+                this.value = _opts.value;
+            }
+            else {
+                this._callbacks = [];
+            }
+            if (callback)
+                this.callback(callback);
+            if (_opts.callback)
+                this.callback(_opts.callback);
+            this.refresh();
+        }
+        Source.prototype.callback = function (handle) {
+            if (this._callbacks === undefined) {
+                handle.call(this, this.value, this.error);
+            }
+            else
+                this._callbacks.push(handle);
+            return this;
+        };
+        Source.prototype._done = function (success, error) {
+            this.value = success;
+            this.error = error;
+            for (var i = 0, j = this._callbacks.length; i < j; i++) {
+                var item = this._callbacks[i];
+                item.call(this, success, error);
+            }
+            _exports = undefined;
+            this._callbacks = undefined;
+        };
+        Source.prototype.refresh = function () {
+            if (!this.url)
+                return;
+            var me = this;
+            if (this.type == "json") {
+                Y.platform.getContent(this.url, function (content, error) {
+                    if (!error)
+                        me._done(JSON.parse(content), error);
+                    else
+                        me._done(undefined, error);
+                });
+                return me;
+            }
+            if (this.type != "js" && this.type != "css") {
+                Y.platform.getContent(this.url, function (content, error) {
+                    me._done(content, error);
+                });
+                return me;
+            }
+            if (this.element)
+                this.element.parentNode.removeChild(this.element);
+            var elem;
+            if (this.type == "js") {
+                elem = document.createElement("script");
+                elem.src = this.url;
+                elem.type = "text/javascript";
+            }
+            else if (this.type == "css") {
+                elem = document.createElement("link");
+                elem.href = this.url;
+                elem.type = "text/css";
+                elem.rel = "stylesheet";
+            }
+            if (elem["onreadystatechange"] !== undefined) {
+                elem.onreadystatechange = function () {
+                    if (elem.readyState == 4 || elem.readyState == "complete") {
+                    }
+                };
+            }
+            else
+                elem.onload = function () {
+                    for (var i = 0, j = me._callbacks.length; i < j; i++) {
+                        var item = me._callbacks[i];
+                        item.call(me, _exports, me.error);
+                    }
+                    _exports = undefined;
+                    me._callbacks = undefined;
+                };
+            elem.onerror = function (ex) {
+                for (var i = 0, j = me._callbacks.length; i < j; i++) {
+                    var item = me._callbacks[i];
+                    item.call(me, _exports, me.error);
+                }
+                _exports = undefined;
+                me._callbacks = undefined;
+            };
+            var myhead = head;
+            if (myhead == null) {
+                var heads = document.getElementsByTagName("head");
+                if (heads && heads.length) {
+                    head = myhead = heads[0];
+                }
+                else {
+                    myhead = document.body;
+                }
+            }
+            this.element = elem;
+            myhead.appendChild(elem);
+            return this;
+        };
+        Source.prototype.dispose = function () {
+        };
+        Source.load = function (opts, callback) {
+            var isUrl = typeof opts === "string";
+            var name = isUrl ? opts : (opts.alias || opts.url);
+            var source = Y.sourceCache[name];
+            if (!source) {
+                source = new Source(opts, callback);
+                Y.sourceCache[name] = source;
+            }
+            else if (callback)
+                source.callback(callback);
+            return source;
+        };
+        return Source;
+    }());
+    Y.Source = Source;
+    Y.sourceCache = {};
+    ////////////////////////////////////
+    /// 模块化
+    ////////////////////////////////////
+    Y.moduleCache = {};
+    var _moduleTick;
+    var _moduleOpts;
+    var Module = (function () {
+        function Module(idOrOpts, callback) {
+            var opts;
+            if (typeof idOrOpts === "string") {
+                this.id = idOrOpts.toString();
+            }
+            else {
+                opts = idOrOpts;
+                this.id = opts.id;
+            }
+            this.ref_count = 0;
+            this._disposing = [];
+            this._callbacks = [];
+            this.data = {};
+            this.activeTime = new Date();
+            if (this.id) {
+                Module.cache[this.id] = this;
+                if (!_moduleTick)
+                    _moduleTick = setInterval(clearExpireModule, 60000);
+            }
+            if (opts)
+                this._init(opts);
+            else
+                this._getOpts(idOrOpts.toString(), callback);
+        }
+        Module.prototype._getOpts = function (url, callback) {
+            var me = this;
+            Y.platform.getContent(url, function (html, error) {
+                var elem = document.createElement("div");
+                elem.innerHTML = html;
+                var script;
+                for (var i = 0, j = elem.childNodes.length; i < j; i++) {
+                    var el = elem.childNodes[i];
+                    var mAttr = el.getAttribute("y-module");
+                    if (mAttr !== undefined) {
+                        elem.removeChild(el);
+                        script = el;
+                        break;
+                    }
+                }
+                if (script === undefined) {
+                    if (callback)
+                        callback(undefined, "no module define script");
+                    else
+                        throw "no module define script";
+                }
+                if (script.src) {
+                    new Source({ url: script.src, type: "js" }, function (scriptElem, error) {
+                        if (error) {
+                            if (callback)
+                                callback(undefined, error);
+                            else
+                                throw error;
+                            return;
+                        }
+                        me.viewTemplate = elem;
+                        me.callback(callback)._init(_moduleOpts);
+                    });
+                }
+                else {
+                    var code = "(function(){" + script.innerHTML + "})();";
+                    try {
+                        eval(code);
+                    }
+                    catch (ex) {
+                        if (callback)
+                            callback(undefined, ex);
+                        else
+                            throw ex;
+                        return;
+                    }
+                    me.viewTemplate = elem;
+                    me.callback(callback)._init(_moduleOpts);
+                }
+            });
+        };
+        Module.prototype._init = function (opts) {
+            opts || (opts = _moduleOpts);
+            if (!this._callbacks) {
+                throw "cannot invoke init when the init method is not done.";
+            }
+            var me = this;
+            this.defineProc = opts.define;
+            var depScripts = [];
+            var throughout = false;
+            var waitingCount = 0;
+            var deps = opts.deps;
+            if (deps) {
+                for (var i = 0, j = deps.length; i < j; i++) {
+                    if (this.error)
+                        return;
+                    waitingCount++;
+                    var dep = deps[i];
+                    Source.load(dep, function (value, err) {
+                        if (err) {
+                            me.error = err;
+                            return;
+                        }
+                        if (me.error || (--waitingCount == 0 && throughout))
+                            me._done();
+                    });
+                }
+            }
+            var args = [];
+            deps = opts.imports;
+            if (deps) {
+                for (var i = 0, j = deps.length; i < j; i++) {
+                    if (this.error)
+                        return;
+                    waitingCount++;
+                    var dep = deps[i];
+                    Source.load(dep, function (value, err) {
+                        if (err) {
+                            me.error = err;
+                            return;
+                        }
+                        else {
+                            args.push(value);
+                        }
+                        if (me.error || (--waitingCount == 0 && throughout))
+                            me._done();
+                    });
+                }
+            }
+            if (opts.lang) {
+                var url = opts.lang.replace("{language}", langId);
+                waitingCount++;
+                new Source(url, function (value, error) {
+                    me.texts = value;
+                    if (me.error || (--waitingCount == 0 && throughout))
+                        me._done();
+                });
+            }
+            this.imports = args;
+            throughout = true;
+            if (me.error || (--waitingCount == 0 && throughout))
+                me._done();
+        };
+        Module.prototype.callback = function (handle) {
+            if (!handle)
+                return this;
+            if (this._callbacks === undefined) {
+                handle.call(this, this.value, this.error);
+            }
+            else
+                this._callbacks.push(handle);
+            return this;
+        };
+        Module.prototype._done = function () {
+            if (this.defineProc)
+                this.value = this.defineProc.apply(this, this.imports);
+            var callbacks = this._callbacks;
+            this._callbacks = undefined;
+            if (callbacks)
+                for (var i = 0, j = callbacks.length; i < j; i++) {
+                    callbacks[i].call(this, this, this.error);
+                }
+        };
+        Module.prototype.disposing = function (handler) {
+            if (this._disposing) {
+                this._disposing.push(handler);
+            }
+            else
+                throw "disposed";
+            return this;
+        };
+        Module.prototype.dispose = function () {
+            if (this._disposing === undefined)
+                return;
+            for (var n in this._disposing) {
+                var fn = this._disposing[n];
+                fn.call(this);
+            }
+        };
+        Module.load = function (url, callback) {
+            var module = Y.moduleCache[url];
+            if (module) {
+                module.activeTime = new Date();
+                module.callback(callback);
+                return;
+            }
+            else {
+                module = new Module(url);
+            }
+        };
+        return Module;
+    }());
+    Module.cache = {};
+    function module(opts) {
+        _moduleOpts = opts;
+    }
+    Y.module = module;
+    function clearExpireModule() {
+        var expireTime = (new Date()).valueOf() - 1000 * 60 * 5;
+        var cache = {};
+        var count = 0;
+        for (var n in Y.moduleCache) {
+            var module_1 = Y.moduleCache[n];
+            if (module_1.ref_count <= 0 && module_1.activeTime.valueOf() < expireTime) {
+                module_1.dispose();
+            }
+            else {
+                cache[n] = module_1;
+                count++;
+            }
+        }
+        Y.moduleCache = cache;
+        if (count === 0) {
+            clearInterval(_moduleTick);
+            _moduleTick = undefined;
+        }
+    }
+    ////////////////////////////////////
+    /// Model
+    ///////////////////////////////////
     var Model = (function () {
         function Model(name, subject) {
             if (name === undefined) {
@@ -550,20 +1046,48 @@ var Y;
     /////////////////////////////////////////////////
     // View
     //////////////////////////////////////////////////
-    "use strict";
     var View = (function () {
-        function View(controller, element, model) {
-            this.controller = controller;
-            if (element == null)
+        function View(controller, model, element) {
+            if (controller === undefined)
                 return;
             this.element = element;
-            model || (model = new Model());
-            this.model = model.$accessor;
-            this._bind = makeBind(model, element, controller);
+            this.model = model || (model = new Model());
+            this.controller = controller;
+            this._bind = makeBind(this.model, this.element, this.controller);
         }
-        View.prototype.clone = function () {
-            var cloned = new View(this.controller);
-            return cloned;
+        View.prototype.clone = function (controller, model, element) {
+            var other = new View();
+            var proto = this;
+            var elem = Y.platform.cloneNode(proto.element);
+            if (element) {
+                element.innerHTML = "";
+                for (var i = 0, j = elem.childNodes.length; i < j; i++) {
+                    element.appendChild(elem.firstChild);
+                }
+                this.element = element;
+            }
+            else
+                this.element = elem;
+            if (model === null) {
+                other.model = this.model;
+            }
+            else if (model === undefined) {
+                other.model = proto.model.clone();
+            }
+            else
+                other.model = model;
+            other._bind = proto._bind;
+            if (controller) {
+                other.controller = controller;
+                other._bind(other.model, other.element, other.controller);
+            }
+            return other;
+        };
+        View.prototype.dispose = function () {
+            this.element = undefined;
+            this.model = undefined;
+            this._bind = undefined;
+            this.controller = undefined;
         };
         return View;
     }());
@@ -580,7 +1104,7 @@ var Y;
             }
         }
         var codes = exprs.join("");
-        codes = "var $self = self.$accessor;\nvar $root = self.root().$accessor;var _binders = Y.binders;\nvar _scopes=[];" + codes;
+        codes = "var $self = self.$accessor;\nvar $root = self.root().$accessor;var _binders = Y.binders;\nvar _scopes=[];var attach=Y.platform.attach;var detech = Y.platform.detech;" + codes;
         return new Function("self", "_element", "_controller", codes);
     }
     Y.makeBind = makeBind;
@@ -677,7 +1201,7 @@ var Y;
             var result = defineModel(modelPath, context);
             _this.modelPath = result.path;
             _this.bind = function (context) {
-                uniBinder(context._element, result.model.$accessor, attrName);
+                uniBinder(context._element, result.model.$accessor, context._controller, attrName);
             };
             return _this;
         }
@@ -688,21 +1212,37 @@ var Y;
     }(Expression));
     var BindExpression = (function (_super) {
         __extends(BindExpression, _super);
-        function BindExpression(modelPath, name, context) {
+        function BindExpression(modelPath, name, context, controller) {
             var _this = _super.call(this) || this;
             _this.name = name;
             var result = defineModel(modelPath, context);
             _this.modelPath = result.path;
             _this.binder = context._binders[name];
             _this.bind = function (context) {
-                context._binders[name](context._element, result.model.$accessor);
+                context._binders[name](context._element, result.model.$accessor, controller);
             };
             return _this;
         }
         BindExpression.prototype.toString = function () {
-            return "_binders[\"" + this.name + "\"](_element," + this.modelPath + ");\n";
+            return "_binders[\"" + this.name + "\"](_element," + this.modelPath + ",_controller);\n";
         };
         return BindExpression;
+    }(Expression));
+    var EachExpression = (function (_super) {
+        __extends(EachExpression, _super);
+        function EachExpression(modelPath, context) {
+            var _this = _super.call(this) || this;
+            var result = defineModel(modelPath, context);
+            _this.modelPath = result.path;
+            _this.bind = function (context) {
+                context._binders["each"](context._element, result.model.$accessor, context._controller);
+            };
+            return _this;
+        }
+        EachExpression.prototype.toString = function () {
+            return "_binders[\"each\"](_element," + this.modelPath + ",_controller);\n";
+        };
+        return EachExpression;
     }(Expression));
     var LabelExpression = (function (_super) {
         __extends(LabelExpression, _super);
@@ -728,7 +1268,7 @@ var Y;
             _this.actionName = actionName;
             _this.evtName = evtName.indexOf("on") == 0 ? evtName.substr(2) : evtName;
             _this.bind = function (context) {
-                attach(context._element, _this.evtName, function (evt) { context._controller[actionName].call(context._controller, evt || window.event, this); });
+                Y.platform.attach(context._element, _this.evtName, function (evt) { context._controller[actionName].call(context._controller, evt || window.event, this); });
             };
             return _this;
         }
@@ -822,7 +1362,18 @@ var Y;
         }
         if (!element.hasChildNodes())
             return;
+        if (eachAttr) {
+            var eachExpr = new EachExpression(eachAttr, context);
+            eachExpr.bind(context);
+            exprs.push(eachExpr);
+            return;
+        }
         var children = element.childNodes;
+        if (scopeAttr) {
+            var scopeBegin = new ScopeBeginExpression(scopeAttr, context);
+            scopeBegin.bind(context);
+            exprs.push(scopeBegin);
+        }
         for (var i = 0, j = element.childNodes.length; i < j; i++) {
             var child = element.childNodes[i];
             var startExpr = new ChildBeginExpression(i, element);
@@ -835,6 +1386,15 @@ var Y;
             if (last.childAt !== i || last.element != element) {
                 exprs.push(last);
                 exprs.push(endExpr);
+            }
+        }
+        if (scopeAttr) {
+            var lastExpr = exprs.pop();
+            if (!(lastExpr instanceof ScopeBeginExpression)) {
+                exprs.push(lastExpr);
+                var scopeEnd = new ScopeEndExpression();
+                scopeEnd.bind(context);
+                exprs.push(scopeEnd);
             }
         }
     }
@@ -876,7 +1436,7 @@ var Y;
         var match = exprText.match(valueReg);
         if (match != null) {
             var path = match[1];
-            var expr = new BindExpression(path, "bibound." + bindname, context);
+            var expr = new BindExpression(path, "bibound." + bindname, context, context._controller);
             expr.bind(context);
             exprs.push(expr);
             return true;
@@ -920,8 +1480,6 @@ var Y;
             codes = [];
         var exprs = [];
     }
-    var attach = window["attachEvent"] ? function (elem, evtname, fn) { elem.attachEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.addEventListener(evtname, fn, false); };
-    var detech = window["detechEvent"] ? function (evtname, elem, fn) { elem.detechEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.removeEventListener(evtname, fn, false); };
     var binders = {
         "bibound.text": function (element, accessor) {
             var handler = function (sender, evt) { element.innerHTML = evt.value; };
@@ -943,9 +1501,9 @@ var Y;
                     clearTimeout(tick);
                 tick = setTimeout(onchange, 180);
             };
-            attach(element, "keydown", evtHandler);
-            attach(element, "keyup", evtHandler);
-            attach(element, "blur", evtHandler);
+            Y.platform.attach(element, "keydown", evtHandler);
+            Y.platform.attach(element, "keyup", evtHandler);
+            Y.platform.attach(element, "blur", evtHandler);
             var handler = function (sender, evt) {
                 element.value = evt.value;
                 evt.extra = element;
@@ -972,7 +1530,7 @@ var Y;
                     }
                 }
             };
-            attach(element, "change", evtHandler);
+            Y.platform.attach(element, "change", evtHandler);
             var handler = function (evt) { setValue(element, evt.value); };
             accessor.subscribe(handler);
             setValue(element, accessor());
@@ -999,9 +1557,9 @@ var Y;
                 setValue(element, evt.value);
                 evt.extra = element;
             };
-            attach(element, "change", evtHandler);
-            attach(element, "blur", evtHandler);
-            attach(element, "click", evtHandler);
+            Y.platform.attach(element, "change", evtHandler);
+            Y.platform.attach(element, "blur", evtHandler);
+            Y.platform.attach(element, "click", evtHandler);
             accessor.subscribe(handler);
             setValue(element, accessor());
             return function () { accessor.unsubscribe(handler); };
@@ -1078,16 +1636,16 @@ var Y;
                 evt.extra = element;
                 setValue(element, value);
             };
-            attach(element, "change", evtHandler);
-            attach(element, "blur", evtHandler);
-            attach(element, "click", evtHandler);
+            Y.platform.attach(element, "change", evtHandler);
+            Y.platform.attach(element, "blur", evtHandler);
+            Y.platform.attach(element, "click", evtHandler);
             accessor.subscribe(handler);
             element.checked = false;
             element.removeAttribute("checked");
             return function () { accessor.unsubscribe(handler); };
         }
     };
-    var uniBinder = binders["unibound"] = function (element, accessor, extra) {
+    var uniBinder = binders["unibound"] = function (element, accessor, controller, extra) {
         var setValue;
         if (element.tagName == "SELECT") {
             setValue = function (element, value) {
@@ -1112,32 +1670,41 @@ var Y;
         setValue(element, undefined);
         return function () { accessor.unsubscribe(handler); };
     };
-    var EachData = (function () {
-        function EachData(view, bind) {
+    var EachItemBindInfo = (function () {
+        function EachItemBindInfo(view, bind) {
             this.view = view;
             this.bind = bind;
         }
-        return EachData;
+        return EachItemBindInfo;
     }());
     var eachBinder = binders["each"] = function (element, accessor, extra) {
-        var model = accessor.$model;
         var controller = extra;
-        var modelProto = model.itemProto().$model;
-        var datas = modelProto["@eachData"] || (modelProto["@eachData"] = []);
-        var viewProto = cloneNode(element);
-        var bind = makeBind(modelProto, element, controller);
-        var d = new EachData(viewProto, bind);
+        var model = accessor.$model;
+        var eachId = element.getAttribute("y-each-view-id");
+        var itemViewProto;
+        if (eachId) {
+            itemViewProto = controller.module.data["y-views"][eachId];
+        }
+        else {
+            eachId = seed().toString();
+            element.setAttribute("y-each-bind-id", eachId);
+            var elemProto = Y.platform.cloneNode(element);
+            var modelProto = model.itemProto().$model;
+            var bind = makeBind(modelProto, element, controller);
+            itemViewProto = new View(controller, modelProto, elemProto);
+            controller.module.data["y-views"][eachId] = itemViewProto;
+        }
         var addItemToView = function (item, anchorElement) {
-            var view = cloneNode(viewProto);
-            d.bind(item, view, controller);
+            var itemView = itemViewProto.clone(controller, item);
+            var elem = itemView.element;
             if (anchorElement == null) {
-                for (var i = 0, j = view.childNodes.length; i < j; i++) {
-                    element.appendChild(view.childNodes[i]);
+                for (var i = 0, j = elem.childNodes.length; i < j; i++) {
+                    element.appendChild(elem.childNodes[i]);
                 }
             }
             else {
-                for (var i = 0, j = view.childNodes.length; i < j; i++) {
-                    element.insertBefore(view.firstChild, anchorElement);
+                for (var i = 0, j = elem.childNodes.length; i < j; i++) {
+                    element.insertBefore(elem.firstChild, anchorElement);
                 }
             }
         };
@@ -1158,16 +1725,17 @@ var Y;
                 return;
             }
             var ievt = evt.directSource;
+            var elemProto = itemViewProto.element;
             switch (ievt.action) {
                 case ModelActions.add:
                     var anchorElement = null;
-                    if (evt.index * viewProto.childNodes.length <= element.childNodes.length - 1)
+                    if (evt.index * elemProto.childNodes.length <= element.childNodes.length - 1)
                         anchorElement = element.childNodes[evt.index];
                     addItemToView(model.getItem(evt.index, true), anchorElement);
                     break;
                 case ModelActions.remove:
-                    var at = evt.index * viewProto.childNodes.length;
-                    for (var i = 0, j = viewProto.childNodes.length; i < j; i++) {
+                    var at = evt.index * elemProto.childNodes.length;
+                    for (var i = 0, j = elemProto.childNodes.length; i < j; i++) {
                         var ch = element.childNodes[at];
                         if (ch == null)
                             break;
@@ -1186,32 +1754,55 @@ var Y;
             model["@model.props"] = {};
             model.unsubscribe(handler);
         };
-    };
-    var o2Str = Object.prototype.toString;
-    var tagContainers = {
-        "": document.createElement("div"),
-        "LEGEND": document.createElement("fieldset"),
-        "DT": document.createElement("DL"),
-        "LI": document.createElement("ul"),
-        "TR": document.createElement("tbody"),
-        "TD": document.createElement("tr"),
-        "TBODY": document.createElement("table"),
-        "OPTION": document.createElement("select")
-    };
-    //oToStr = Object.prototype.toString;
-    tagContainers["THEAD"] = tagContainers["TFOOT"] = tagContainers.TBODY;
-    tagContainers["DD"] = tagContainers.DT;
-    var cloneNode = function (elem) {
-        var tag = elem.tagName;
-        if (elem.cloneNode)
-            return elem.cloneNode(true);
-        var ctn = tagContainers[tag] || tagContainers[""];
-        var html = elem.outerHTML + "";
-        ctn.innerHTML = html;
-        //var html = ctn.innerHTML;
-        //ctn.innerHTML = html;
-        return ctn.firstChild;
-    };
+    }; //end eachBind
+    function controll(opts) {
+        Module.load(opts.url, function (proto, error) {
+            if (error) {
+                opts.callback(undefined, error);
+                return;
+            }
+            var module = this;
+            var controllerType = module.data["y-controllerType"];
+            if (!controllerType) {
+                controllerType = proto;
+                if (typeof proto === "object") {
+                    controllerType = function () { };
+                    controllerType.prototype = proto;
+                }
+                module.data["y-controllerType"] = controllerType;
+            }
+            var controller = new controllerType();
+            controller.module = module;
+            var view = module.data["y-mainView"];
+            if (!view) {
+                view = new View(controller, undefined, opts.area);
+                module.data["y-views"] = [];
+                module.data["y-mainView"] = view.clone(undefined, null, undefined);
+            }
+            else {
+                view = view.clone(controller, null, opts.area);
+            }
+            controller.view = view;
+            controller.model = view.model.$accessor;
+            controller.load(controller.model, controller.view);
+            if (opts.callback)
+                opts.callback(controller);
+        });
+    }
+    Y.controll = controll;
+    Y.platform.attach(window, "load", function () {
+        var scripts = document.getElementsByTagName("script");
+        for (var i = 0, j = scripts.length; i < j; i++) {
+            var booturl = scripts[i].getAttribute("y-boot-url");
+            if (booturl) {
+                var elemId = scripts[i].getAttribute("y-boot-area");
+                Y.controll({
+                    url: booturl,
+                    area: document.getElementById(elemId)
+                });
+            }
+        }
+    });
     var _seed = 0;
     function seed() {
         return (_seed == 2100000000) ? _seed = 0 : _seed++;

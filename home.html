@@ -17,14 +17,20 @@
       <script src="js/html5shiv.min.js"></script>
       <script src="js/respond.min.js"></script>
     <![endif]-->
+    <script>window.exports = window;</script>
   </head>
   <body>
+    <div id="layout"></div>
     <h1>你好，世界！</h1>
 
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
-    <script src="js/jquery.min.js"></script>
+    <script src="scripts/jquery.min.js"></script>
     <!-- Include all compiled plugins (below), or include individual files as needed -->
-    <script src="js/bootstrap.min.js"></script>
-    <script src="js/flat-ui.min.js"></script>
+    <script src="scripts/bootstrap.min.js"></script>
+    <!-- the beatifull bootstrap ui -->
+    <script src="scripts/flat-ui.min.js"></script>
+
+    <script src="scripts/mvc.js" y-boot-url="sys/sys.html" y-boot-area="layout"></script>
+
   </body>
 </html>
