@@ -8,7 +8,9 @@ export namespace Y {
     export interface ILoadCallback{
         (value:any,error?:any):void;
     }
+    
     export enum SourceTypes{
+        module,
         script,
         css,
         json,
@@ -24,52 +26,9 @@ export namespace Y {
         value?:any;
         extras?:any;
     }
-    export interface ISource{
-        url:string;
-        type:SourceTypes;
-        alias:string;
-        value?:any;
-        extras?:any;
-        error?:any;
-        element?:HTMLElement;
-        callback(handle:ILoadCallback):ISource;
-        refresh():ISource;
-        dispose():void;
-    }
-
-    //模块化接口
-    export interface IModuleOpts{
-        id?:string;
-        template?:HTMLElement;
-        deps?:Array<string|ISourceOpts>;
-        imports?:Array<string|ISourceOpts>;
-        lang?:string;
-        data?:{[index:string]:any};
-        define?:Function;
-    }
-    export interface IModule{
-        //唯一Id
-        id?:string;
-        ref_count:number;
-        //view模板
-        viewTemplate?:HTMLElement;
-        //字符串资源，多语言用
-        texts?:{[index:string]:string};
-        //导入的资源
-        imports:Array<any>;
-        //错误
-        error?:any;
-        //最后活跃时间
-        activeTime:Date;
-        //加载完成后的回调
-        callback(handle:ILoadCallback):IModule;
-        //dispose事件
-        disposing(handler:Function):IModule;
-        //放在module上的数据
-        data:{[index:string]:any};
-        //释放资源
-        dispose():void;        
-    }
+    
+    
+    
 
     export interface IModel {
         subscribe(handler:IModelEventHandler):void;
@@ -106,7 +65,7 @@ export namespace Y {
         _TEXT:ILabel;
         views:{[index:string]:IView};
         parentController:IController;
-        module:IModule;
+        module:Module;
         data:{[index:string]:any};
         load(model:IModelAccessor,view:IView):void;
         dispose():void;
@@ -117,26 +76,269 @@ export namespace Y {
     export interface ILabel{
          (key:string):string;
     }
-    export interface IPlatform{
-        alert(message:string);
-        //添加事件
-        attach(elem:EventTarget,evtName:string,evtHandler:Function):void;
-        //解除事件
-        detech(elem:EventTarget,evtName:string,evtHandler:Function):void;
-        ajax(opts):void;
-        //获取内容
-        getContent(url:string,callback:Function):void;
-        cloneNode(element:HTMLElement):HTMLElement;
-        getElement(selector:any,context?:any):HTMLElement;
+
+    ////////////////////////////////////
+    /// 通用机制
+    ///////////////////////////////////
+    export let NONE = {};
+    export let BREAK = {};
+    export let USEAPPLY ={};
+    //观察者模式基类
+    export class Observable{
+        private __y_observable_subscriberset?:{[index:string]:Function[]};
+        private __y_observable_default_subscribers:Function[];
+        public subscribe(event:string|Function,handler?:Function):Observable{
+            let subscribers : Function[];
+            if(handler===undefined){
+                handler = event as Function;
+                subscribers = this.__y_observable_default_subscribers || (this.__y_observable_default_subscribers=[]);
+            }else {
+                let sets = this.__y_observable_subscriberset || (this.__y_observable_subscriberset={});
+                subscribers = sets[event as string] || (sets[event as string]=[]);
+            }
+            subscribers.push(handler);
+            return this;
+        }
+        public unsubscribe(event:string|Function,handler?:Function):Observable{
+            let subscribers : Function[];
+            if(handler===undefined){
+                handler = event as Function;
+                subscribers = this.__y_observable_default_subscribers ;
+            }else {
+                subscribers = this.__y_observable_subscriberset?this.__y_observable_subscriberset[event as string]:null;
+            }
+            if(!subscribers) return this;
+            for(let i =0,j=subscribers.length;i<j;i++){
+                let exist:Function = subscribers.shift();
+                if(exist!==handler) subscribers.push(exist);
+            }
+            return this;
+        }
+        public notify(event:any,args?:any):Observable{
+            let subscribers : Function[];
+            if(args===undefined){
+                args = event as Function;
+                subscribers = this.__y_observable_default_subscribers ;
+            }else {
+                subscribers = this.__y_observable_subscriberset?this.__y_observable_subscriberset[event as string]:null;
+            }
+            if(!subscribers) return this;
+            var isArr = isArray(args);
+            for(let i =0,j=subscribers.length;i<j;i++){
+                if(subscribers[i].call(this,args) ===BREAK) break;
+            }
+            return this;
+        }
+        public applyNotify(event:any,args?:any):Observable{
+            let subscribers : Function[];
+            if(args===undefined){
+                args = event as Function;
+                subscribers = this.__y_observable_default_subscribers ;
+            }else {
+                subscribers = this.__y_observable_subscriberset?this.__y_observable_subscriberset[event as string]:null;
+            }
+            if(!subscribers) return this;
+            var isArr = isArray(args);
+            for(let i =0,j=subscribers.length;i<j;i++){
+                if(subscribers[i].apply(this,args) === BREAK) break;
+            }
+            return this;
+        }
     }
+   
+    export class PromiseResult{
+        public constructor(fullfilled?:boolean,value?:any,value1?:any){
+            this.value = value;this.value1 = value1;
+            this.isFullfilled = fullfilled;
+            this.useApply = value1 === USEAPPLY;
+        }
+        value:any;
+        value1?:any;
+        isFullfilled:boolean;
+        useApply:boolean;
+        isRejected(me?:any,reject?:Function):boolean{
+            if(!this.isFullfilled){
+                if(reject){
+                    if(this.useApply) reject.apply(me,this.value);
+                    else reject.call(me,this.value,this.value1);
+                }
+                return true;
+            }
+            return false;
+        }
+        isResolved(me?:any,resolve?:Function):boolean{
+            if(this.isFullfilled){
+                if(resolve){
+                    if(this.useApply) resolve.apply(me,this.value);
+                    else resolve.call(me,this.value,this.value1);
+                }
+                
+                return true;
+            }
+            return false;
+        }
+    }
+    export class Promise{
+        __y_promise_resolves?: Array<(value:any)=>any>;
+        __y_promise_rejects?:Array<(value:any)=>any>;
+        __y_promise_result?:PromiseResult;
+        __y_promise_promises?:Promise[];
+        resolve?:(value?:any)=>Promise;
+        reject?:(value?:any)=>Promise;
+
+        constructor(param?:any,statement?:Function){
+            let resolve : (value?:any,value1?:any)=>any=(value?:any,value1?:any)=>{
+                if(value===this) throw new TypeError("cannot use self promise as fullfilled value.");
+                let vt = typeof(value);
+                if(value instanceof Promise){
+                    let other :Promise = value as Promise;
+                    if(!(this.__y_promise_result = other.__y_promise_result)){
+                        (other.__y_promise_promises||(other.__y_promise_promises=[])).push(this);
+                    }else{
+                        this.__y_promise_complete(other.__y_promise_result);
+                    }
+                }else if(vt==="object"){
+                    if((value as Promise).then){
+                        (value as Promise).then(resolve,reject,true);
+                    }else{
+                        let result :PromiseResult = new PromiseResult(true,value,value1);
+                        this.__y_promise_complete(result);
+                    }
+                }else if(vt==="function"){
+                    (value as (val:any)=>void).call(this,resolve,reject);
+                }else{
+                    let result :PromiseResult =  new PromiseResult(true,value,value1);
+                    this.__y_promise_complete(result);
+                }
+                return this;
+            };
+            let reject : (value?:any,value1?:any)=>any=(value?:any,value1?:any)=>{this.__y_promise_complete( new PromiseResult(false,value,value1));}
+            if(statement===undefined) {
+                statement = param as Function;
+                param = statement;
+            }
+            if(statement){
+                try{
+                    statement.call(this,resolve,reject,param);
+                }catch(ex){
+                    this.__y_promise_complete( new PromiseResult(false,ex));
+                }
+            }else{
+                this.resolve = resolve;
+                this.reject = reject;
+            }
+
+        }
+        private __y_promise_complete(result:PromiseResult):void{
+            let handlers :Array<(value:any)=>any> = result.isRejected ? this.__y_promise_rejects : this.__y_promise_resolves;
+            let promises :Promise[] = this.__y_promise_promises;
+            this.__y_promise_result = result;
+            //this.__y_promise_status = isRejected?PromiseStates.Rejected:PromiseStates.Resolved;
+            this.__y_promise_promises =undefined;
+            this.__y_promise_rejects = undefined;
+            this.__y_promise_resolves = undefined;
+            this.resolve = this.reject = undefined;
+            if(handlers){
+                setImmediate(()=>{
+                    if(result.useApply)for(let i =0,j=handlers.length;i<j;i++) handlers[i].apply(this,result);
+                    else for(let i =0,j=handlers.length;i<j;i++) handlers[i].call(this,result);
+                });
+            }
+            if(promises && promises.length){
+                for(let i =0,j=promises.length;i<j;i++) promises[i].__y_promise_complete(result);
+            }
+        }
+        then(resolve:(value:any)=>any,reject?:(value:any)=>any,ck?:boolean):Promise{
+            this.done(resolve,ck).fail(reject,ck);
+            return this;
+        }
+        done(handle:(value:any)=>any,ck?:boolean):Promise{
+            if(!handle) return this;
+            let result :PromiseResult = this.__y_promise_result;
+            if(result){
+                 result.isResolved(this,handle);
+            }else{
+                let handlers = this.__y_promise_rejects;
+                if(!ck || handlers || handlers.length==0)
+                    (this.__y_promise_rejects||(this.__y_promise_rejects=[])).push(handle);
+                else {
+                    for(let i=0,j=handlers.length;i<j;i++) if(handlers[i]===handle)return;
+                    handlers.push(handle);
+                }
+            }
+            return this;
+        }
+        fail(handle:(value:any)=>any,ck?:boolean):Promise{
+            if(!handle) return this;
+            let result :PromiseResult = this.__y_promise_result;
+            if(result){
+                result.isRejected(this,handle);
+            }else{
+                let handlers = this.__y_promise_rejects;
+                if(!ck || handlers || handlers.length==0)
+                    (this.__y_promise_rejects||(this.__y_promise_rejects=[])).push(handle);
+                else {
+                    for(let i=0,j=handlers.length;i<j;i++) if(handlers[i]===handle)return;
+                    handlers.push(handle);
+                }
+            }
+            return this;
+        }
+        promise(promise):Promise{
+            let result = new Promise();
+            let resolve =result.resolve;
+            let reject = result.reject;
+            result.resolve = result.reject = undefined;
+            result.done((value)=>{
+                promise.call(result,resolve,reject,this.__y_promise_result);
+            }).fail(()=>{
+                promise.call(result,resolve,reject,this.__y_promise_result);
+            });
+            return result;
+            
+        }
+        static when(...args:any[]):Promise{
+            if(isArray(args[0])){
+                return new Promise((resolve,reject)=>{
+                    let [deps,promise] = args;
+                    let result=[];
+                    let taskCount =args.length;
+                    let hasError :any;
+                    for(let i =0,j=taskCount;i<j;i++){
+                        let dep = deps[i];
+                        if(!promise)continue;
+                        if(typeof promise==="function") dep = new Promise(promise);
+                        if(!(<Promise>promise).then) {
+                            if(!promise) throw new Error("promise make located at arguments[1] is required.");
+                            dep = promise(dep);
+                        } 
+                        (dep as Promise).done((value)=>{
+                            if(hasError) return;
+                            result[i] = value;
+                            if(--taskCount==0) resolve(result);
+                        }).fail((err)=>{
+                            hasError = err;
+                            reject(err);
+                        });
+                    }
+                });
+            }else {
+                return Promise.when(args);
+            }
+        }
+        
+    }
+    
+    
     
     ////////////////////////////////////
     /// 平台抽象
     ///////////////////////////////////
+   
 
     let tagContainers:{[index:string]:HTMLElement};
 	
-    export class Platform implements IPlatform{
+    export class Platform {
         attach(elem:EventTarget,evtName:string,evtHandler:Function):void{}
         //解除事件
         detech(elem:EventTarget,evtName:string,evtHandler:Function):void{}
@@ -171,6 +373,9 @@ export namespace Y {
             ctn.innerHTML = html;
 	        return ctn.firstChild as HTMLElement;
         }
+        createElement(tagName:string):HTMLElement {
+            return document.createElement(tagName);
+        }
         getElement(selector:any,context?:any):HTMLElement{
             if(typeof selector ==="string"){
                 let cssText = selector as string;
@@ -188,79 +393,76 @@ export namespace Y {
             }else return selector;
         }
         //获取内容
-        getContent(url:string,callback:Function):void{
-            this.ajax({
+        getContent(url:string):Promise{
+            return this.ajax({
                 url:url,
-                method:"GET",
-                callback:callback
+                method:"GET"
             });
         }
-        ajax(opts:any):void {
-            let http:any=null;
-            if(window["XMLHttpRequest"]){  
-                http=new XMLHttpRequest();  
-                if(http.overrideMimeType) http.overrideMimeType("text/xml");
-            }else if(window["ActiveXObject"]){  
-                let activeName=["MSXML2.XMLHTTP","Microsoft.XMLHTTP"];  
-                for(let i=0;i<activeName.length;i++) try{http=new ActiveXObject(activeName[i]); break;}catch(e){}
-            }
-            if(http==null)  throw "Cannot create XmlHttpRequest Object";
-            
-            let url = opts.url;
-            if(!url) throw "require url";
-            let method = opts.method ? opts.method.toUpperCase():"GET";
+        ajax(opts:any):Promise {
+            return new Promise((resolve,reject)=>{
+                let http:any=null;
+                if(window["XMLHttpRequest"]){  
+                    http=new XMLHttpRequest();  
+                    if(http.overrideMimeType) http.overrideMimeType("text/xml");
+                }else if(window["ActiveXObject"]){  
+                    let activeName=["MSXML2.XMLHTTP","Microsoft.XMLHTTP"];  
+                    for(let i=0;i<activeName.length;i++) try{http=new ActiveXObject(activeName[i]); break;}catch(e){}
+                }
+                if(http==null)  throw "Cannot create XmlHttpRequest Object";
+                
+                let url = opts.url;
+                if(!url) throw "require url";
+                let method = opts.method ? opts.method.toUpperCase():"GET";
 
-            let data = opts.data;
-            if(typeof data==='object'){
-                let content = "";
-                for(var n in data){
-                    content += encodeURIComponent(n) + "=" + encodeURIComponent(data[n]) + "&";
+                let data = opts.data;
+                if(typeof data==='object'){
+                    let content = "";
+                    for(var n in data){
+                        content += encodeURIComponent(n) + "=" + encodeURIComponent(data[n]) + "&";
+                    }
+                    data = content;
                 }
-                data = content;
-            }
 
-            if(method=="POST"){  
-                http.setRequestHeader("Content-type","application/x-www-four-urlencoded");  
-            } else if(method=="GET"){
-                if(url.indexOf("?")) {if(data) url +="&" + data;}
-                else if(data) url += "?" + data;
-                data = null;
-            }
-            let headers = opts.headers;
-            if(headers) for(let n in headers) http.setRequestHeader(n,headers[n]);  
-            var httpRequest:XMLHttpRequest = http as XMLHttpRequest;
-            function callback(){  
-                if(httpRequest.readyState==4 && opts.callback){
-                    let result;
-                    if(opts.dataType=="json"){ result = JSON.parse(httpRequest.responseText);}
-                    else if(opts.dataType=="xml"){result = httpRequest.responseXML;}
-                    else result = httpRequest.responseText;
-                    opts.callback.call(http,result);
+                if(method=="POST"){  
+                    http.setRequestHeader("Content-type","application/x-www-four-urlencoded");  
+                } else if(method=="GET"){
+                    if(url.indexOf("?")) {if(data) url +="&" + data;}
+                    else if(data) url += "?" + data;
+                    data = null;
                 }
-             }  
-            httpRequest.onreadystatechange = callback;
-            if(opts.callback)httpRequest.onerror = (err)=>{
-                opts.callback.call(httpRequest,err);
-            };
-            
-            httpRequest.open(method,url,true);
-            httpRequest.send(data);
-
+                let headers = opts.headers;
+                if(headers) for(let n in headers) http.setRequestHeader(n,headers[n]);  
+                var httpRequest:XMLHttpRequest = http as XMLHttpRequest; 
+                httpRequest.onreadystatechange = ()=>{
+                    if(httpRequest.readyState==4 && opts.callback){
+                        let result;
+                        if(opts.dataType=="json"){ result = JSON.parse(httpRequest.responseText);}
+                        else if(opts.dataType=="xml"){result = httpRequest.responseXML;}
+                        else result = httpRequest.responseText;
+                        resolve(result,http);
+                    }
+                };
+                httpRequest.onerror = (err)=>{
+                    reject(err,httpRequest);
+                };
+                
+                httpRequest.open(method,url,true);
+                httpRequest.send(data);
+            });
         }//end ajax
 
     }
 
     
 
-    export let platform:IPlatform= new Platform();
+    export let platform:Platform= new Platform();
     let o2Str:Function = Object.prototype.toString;
 
     export function isArray(o:any){
         if(!o)return false;
         return o2Str.call(o) == "[Object Array]";
     }
-    
-    window["exports"] = {};
     
 
     
@@ -275,385 +477,171 @@ export namespace Y {
     
     
 
-    ////////////////////////////////////
-    /// 资源加载
-    ////////////////////////////////////
-
-
-
-    let head :HTMLElement;
-
-    let _exports:any;
-
     
-    export class Source implements ISource{
-        url:string;
-        type:SourceTypes;
-        alias:string;
-        value?:any;
-        error?:any;
-        extras?:any;
-        element?:HTMLElement;
-        _callbacks?:Array<ILoadCallback>;
-        constructor(opts:ISourceOpts|string,callback?:ILoadCallback){
-            let _opts :ISourceOpts;
-            if(typeof opts ==="string"){
-                _opts ={url:opts,alias:opts,type:undefined,callback:callback};
-                let url = opts;
-                if(url.lastIndexOf(".js"))_opts.type = SourceTypes.script;
-                else if(url.lastIndexOf(".css")) _opts.type = SourceTypes.css;
-                else if(url.lastIndexOf(".json")) _opts.type = SourceTypes.json;
-            }
-            this.url = _opts.url;
-            this.type = _opts.type;
-            this.alias = _opts.alias|| this.url;
-            this.extras = _opts.extras;
-            if(callback) this.callback(callback);
-            if(_opts.callback) this.callback(_opts.callback);
-
-            if(_opts.value!==undefined){
-                this.value = _opts.value;
-                this._done(this.value,undefined);
-            }else{
-                this._callbacks = [];
-                this.refresh();
-            } 
-        }
-        callback(handle:ILoadCallback):ISource{
-            if(this._callbacks===undefined){handle.call(this,this.value,this.error);}
-            else this._callbacks.push(handle);
-            return this;
-        }
-        _done(success,error):void{
-            this.value = success;
-            this.error = error;
-             for(let i=0,j=this._callbacks.length;i<j;i++){
-                let item:ILoadCallback = this._callbacks[i];
-                item.call(this,success,error);
-            }  
-            _exports = undefined;
-            this._callbacks = undefined;
-        }
-        refresh():ISource{
-            if(!this.url)return this;
-            let me:Source = this;
-            if(this.type==SourceTypes.json){
-                platform.getContent(this.url,function(content,error){
-                    if(!error) me._done(JSON.parse(content),error);
-                    else me._done(undefined,error);
-                });
-                return me;
-            }
-            if(this.type!=SourceTypes.css && this.type!=SourceTypes.script){
-                platform.getContent(this.url,function(content,error){
-                    me._done(content,error);
-                });
-                return me;
-            }
-
-            if(this.element)this.element.parentNode.removeChild(this.element);
-            let elem :HTMLElement;
-            
-            if(this.type==SourceTypes.script){
-                elem = document.createElement("script");
-                (elem as HTMLScriptElement).src = this.url;
-                (elem as HTMLScriptElement).type = "text/javascript";
-                
-            }else if(this.type==SourceTypes.css){
-                elem = document.createElement("link");
-                (elem as HTMLLinkElement).href=this.url;
-                (elem as HTMLLinkElement).type="text/css";
-                (elem as HTMLLinkElement).rel="stylesheet";
-            }
-            if(elem["onreadystatechange"]!==undefined){
-                (elem as any).onreadystatechange = function(){
-                    if((elem as any).readyState==4 || (elem as any).readyState=="complete"){
-                       
-                    }
-                }
-            }else elem.onload = function(){
-                for(let i=0,j=me._callbacks.length;i<j;i++){
-                    let item:ILoadCallback = me._callbacks[i];
-                    item.call(me,_exports,me.error);
-                }  
-                _exports = undefined;
-                me._callbacks = undefined;
-            }
-            elem.onerror = function(ex){
-                _exports = undefined;
-                me._callbacks = undefined;
-                elem.parentNode.removeChild(elem);
-
-                for(let i=0,j=me._callbacks.length;i<j;i++){
-                    let item:ILoadCallback = me._callbacks[i];
-                    item.call(me,_exports,me.error);
-                }  
-                
-            }
-            
-            let myhead = head;
-            if(myhead==null){
-                let heads:NodeListOf<HTMLHeadElement> = document.getElementsByTagName("head");
-                if(heads && heads.length) {head = myhead = heads[0];}
-                else {myhead = document.body;}
-            }
-            this.element = elem;
-            myhead.appendChild(elem);
-            return this;
-        }
-        dispose():void{
-
-        }
-        static cache :{[index:string]:Source} = {};
-        public static load(opts:ISourceOpts|string,callback?:ILoadCallback):Source{
-            let isUrl:boolean = typeof opts ==="string"; 
-            let name :string=isUrl ?(opts as string): ((opts as ISourceOpts).alias|| (opts as ISourceOpts).url);
-            if(isUrl){
-                name = opts as string;
-            }else{
-                let _opts:ISourceOpts = opts as ISourceOpts;
-                if(_opts.nocache===true) return new Source(opts,callback);
-                name = (_opts.alias|| _opts.url);
-            }
-            let source:Source= Source.cache[name];
-            if(!source){
-                source = new Source(opts,callback);
-                if(source.url){Source.cache[source.url] =  source;}
-                if(source.alias){Source.cache[source.alias] =  source;}
-            }else if(callback) source.callback(callback);
-            return source;
-        }
-        public static loadMany(opts:{[index:string]:ISourceOpts|string}|Array<ISourceOpts|string>,nocache?:boolean|Function,callback?:Function):{[index:string]:Source}{
-            let result:{[index:string]:Source} = {};
-            if(typeof nocache==="function"){
-                callback = nocache;
-                nocache = false;
-            }
-            let waitingCount:number = 1;
-            let hasError:any;
-            for(var n in opts){
-                if(hasError)break;
-                let srcOpts :ISourceOpts|string= opts[n];
-                if(typeof srcOpts==="string") srcOpts = {url:srcOpts,nocache:nocache,extras:n} as ISourceOpts;
-                Source.load(srcOpts,(value:any,error:any)=>{
-                    if(hasError)return;
-                    if(error) {hasError = error; return;}
-                    let src:Source = (this as any) as Source;
-                    result[src.extras] = src;
-                    if(--waitingCount==0 && callback) callback(result,undefined);
-                });
-            }
-            if(--waitingCount==0 && callback) callback(result,undefined);
-            return result;
-        }
-    }
 
     
 
     ////////////////////////////////////
     /// 模块化
     ////////////////////////////////////
-    
-    
-    
-    class Module implements IModule {
-        id?:string;
-        ref_count:number;
-        viewTemplate?:HTMLElement;
-        texts?:{[index:string]:string};
-        data:{[index:string]:any};
-        imports:Array<any>;
-        defineProc:Function;
+    class ControlOpts{
+        template:HTMLElement;
+        define:Function|string;
+    }
+    class ModuleParameter{
+        activate:(module:Module)=>void;
+        disposing:(module:Module)=>void;
+    }
+    export enum ModuleTypes{
+        control,
+        script,
+        css,
+        json,
+        text,
+        image
+    }
+    export class ModuleOpts{
+        alias:string;
+        type?:ModuleTypes;
+        url?:string;
         value?:any;
+        expiry?:number|Date;
+        element?:HTMLElement;
+        shares?:Array<string|ModuleOpts>;
+        scopes?:Array<string|ModuleOpts>;
+        imports?:Array<string|ModuleOpts>;
+        lang?:string;
+        data?:{[index:string]:any};
+        define?:Function|string;
+    }
+    export class Module extends Promise {
+        //资源的唯一编号
+        alias?:string;
+        url?:string;
+        //load返回的值
+        value:any;
+        //资源类型
+        type:ModuleTypes;
+        //资源上的数据
+        data:{[index:string]:any};
+        expiry:number|Date;
+        //引用计数
+        ref_count:number;
+        element?:HTMLElement;
+        texts?:{[index:string]:string};
+        scopes:any;
+        
+        imports:Array<any>;
         _disposing:Array<Function>;
         _callbacks:Array<Function>;
         error:any;
         activeTime:Date;
-        static cache:{[index:string]:Module} = {}
-        public constructor(idOrOpts:IModuleOpts|string,callback?:ILoadCallback){
-            let opts:IModuleOpts;
-            if(typeof idOrOpts ==="string"){
-                this.id = idOrOpts.toString();
-               
-            }else{
-                opts = idOrOpts as IModuleOpts;
-                this.id = opts.id;
+       
+        public constructor(opts:ModuleOpts){
+            super();
+            let me :Module = this;
+            this.alias = opts.alias|| opts.url;
+            this.url = opts.url;
+            this.type = opts.type || Module.getResourceType(opts.url);
+            if(this.type===undefined) {
+                throw new Error("Cannot get module type.");
             }
             this.ref_count = 0;
             this._disposing = [];
             this._callbacks = [];
-            if(opts)this.data = opts.data;
+            this.data = opts.data;
             if(!this.data) this.data = {};
-            this.activeTime = new Date();
-            if(this.id){
-                Module.cache[this.id] = this;
+            if(opts.expiry){
+                this.expiry = opts.expiry;
+                this.activeTime = new Date();
                 if(!Module.clearTimer)Module.clearTimer = setInterval(Module.clearExpired,Module.clearInterval || 60000);
             }
-            if(callback) this.callback(callback);
-            if(opts) this._init(opts);
-            else this._getOptsAndInit(idOrOpts.toString());
+            let {resolve,reject} = this;
+            this.reject = this.reject = undefined;
+            if(this.url){
+                Module.loadResource(this.url,this.type).then((newOpts)=>{
+                    this._combineModuleOpts(opts,newOpts);
+                    this._init(opts,resolve,reject);
+                },(err)=>reject(err));
+            }else{
+                this._init(opts,resolve,reject);
+            }
+            
         }
 
-        private _getOptsAndInit(url:string){
-            let me :Module = this;
-            platform.getContent(url,function(html,error){
-                let elem = document.createElement("div");
-                html = html.replace("<!DOCTYPE html>","")
-                    .replace(/<html\s/i,"<div ")
-                    .replace(/<\/html>/i,"<div ")
-                    .replace(/<head\s/i,"<div class='y-head' ")
-                    .replace(/<\/head>/i,"</div>")
-                    .replace(/<body\s/i,"<div class='y-body' ")
-                    .replace(/<\/body>/i,"</div>");
-
-                elem.innerHTML = html;
-                let deps :Array<ISourceOpts>=[];
-                let scripts:NodeListOf<HTMLScriptElement> = elem.getElementsByTagName("script");
-                let script:HTMLScriptElement;
-                let links = elem.getElementsByTagName("link");
-                
-                for(let i =0,j=scripts.length;i<j;i++){
-                    let sElem:HTMLScriptElement = scripts[i] as HTMLScriptElement;
-                    let src:string = sElem.getAttribute("src");
-                    let isModule = sElem.getAttribute("y-module");
-                    if(isModule){script = sElem;sElem.parentNode.removeChild(sElem);}
-                    if(!src) continue;
-                    let alias:string = script.getAttribute("y-alias");
-                    let scriptOpts :ISourceOpts = {
-                        url:src,
-                        alias:alias || src,
-                        type:SourceTypes.script
-                    };
-                    deps.push(scriptOpts);
-                    sElem.parentNode.removeChild(sElem);
-                }
-                for(let i =0,j=links.length;i<j;i++){
-                    let sElem:HTMLLinkElement = links[i] as HTMLLinkElement;
-                    let src:string = sElem.getAttribute("href");
-                    if(!src) continue;
-                    let alias:string = script.getAttribute("y-alias");
-                    let cssOpts :ISourceOpts = {
-                        url:src,
-                        alias:alias || src,
-                        type:SourceTypes.css
-                    };
-                    deps.push(cssOpts);
-                    sElem.parentNode.removeChild(sElem);
-                }
-                let moOpts:IModuleOpts = {
-                    template : elem,
-                    deps:deps
-                };
-
-                if(script===undefined){
-                    return me._init(moOpts);
-                }
-                if(script.src){
-                    new Source({url:script.src,type:SourceTypes.script},function(scriptElem,error){
-                        if(error){
-                            me.error = error;
-                            me._done();
-                            return;
-                        }
-                        moOpts = this._combineModuleOpts(moOpts);
-                        me._init(moOpts);
-                    });
-                }else{
-                    let code:string = "(function(){" + script.innerHTML + "})();";
-                    try{
-                        eval(code);
-                    }catch(ex){
-                        me.error = ex;
-                        return  me._done();
-                        
-                    }
-                    moOpts = this.combineModuleOpts(moOpts);
-                    me._init(moOpts);
-                }
-            });
+        public static getResourceType(url:string):ModuleTypes{
+            if(!url)return;
+            if(/.js$/i.test(url))return ModuleTypes.script;
+            if(/.css$/i.test(url)) return ModuleTypes.css;
+            if(/.json$/i.test(url)) return ModuleTypes.json;
+            if(/(?:.html$)|(?:.htm$)/i.test(url)) return ModuleTypes.control;
+            if(/(?:.jpg$)|(?:.png$)|(?:.bmp$)|(?:.gif$)/i.test(url)) return ModuleTypes.image;
+            return undefined;
+            
         }
 
-        private _combineModuleOpts(dest:IModuleOpts,src?:IModuleOpts){
-            src || (src=Module.exportModuleOpts);
-            if(!src){
-                this.error = "未定义module";
-                return this._done();
-            }else {Module.exportModuleOpts = undefined;}
+        private _combineModuleOpts(dest:ModuleOpts,src?:ModuleOpts):ModuleOpts{
+            if(!src){return dest;}
 
             dest.define = src.define;
             dest.lang = src.lang;
             dest.data = src.data;
-            let _deps :Array<ISourceOpts|string> = src.deps;
+            let _deps :Array<ModuleOpts|string> = src.shares;
             if(_deps){
-                if(!dest.deps) dest.deps = [];
+                if(!dest.shares) dest.shares = [];
                 for(let i=0,j=_deps.length;i<j;i++){
-                    dest.deps.push(_deps[i]);
+                    dest.shares.push(_deps[i]);
                 }
             }
-            dest.imports = src.imports;
+            _deps = src.scopes;
+            if(_deps){
+                if(!dest.scopes) dest.scopes = [];
+                for(let i=0,j=_deps.length;i<j;i++){
+                    dest.scopes.push(_deps[i]);
+                }
+            }
+            if(src.imports)dest.imports = src.imports;
             return dest;
         } 
-        private _init(opts:IModuleOpts){      
+        private _init(opts:ModuleOpts,resolve:Function,reject:Function){
             let me :Module = this;
-            this.defineProc = opts.define;
-            this.viewTemplate = opts.template;
-            let depScripts:Array<Source> = [];
-            let waitingCount = 1;
-            let deps = opts.deps;
-            if(deps){
-                for(let i=0,j=deps.length;i<j;i++){
-                    if(this.error)return;
-                    waitingCount++;
-                    let dep = deps[i];
-                    Source.load(dep ,function(value,err){
-                        if(err) {  me.error = err;return; }
-                        if(me.error ||(--waitingCount==0)) me._done();
-                    });
-                }
-            }
-            let args = [];
-            deps = opts.imports;
-            if(deps){
-                for(let i=0,j=deps.length;i<j;i++){
-                    if(this.error)return;
-                    waitingCount++;
-                    let dep = deps[i];
-                    Source.load(dep ,function(value,err){
-                        if(err) {  me.error = err;return; }
-                        if(me.error ||(--waitingCount==0)) me._done();
-                        args.push(value);
-                    });
-                }
-            }
-            
-
-            if(opts.lang){
-                let url :string = opts.lang.replace("{language}",langId);
-                waitingCount++;
-                new Source(url,function(value,error){
-                    me.texts = value;
-                    if(me.error ||(--waitingCount==0)) me._done();
-                });
-            }
-            this.imports = args;
-            if(me.error ||(--waitingCount==0)) me._done();
-            
+            this.element = opts.element;
+            let depScripts:Array<Module> = [];
+            let langUrl = opts.lang?opts.lang.replace("{language}",langId):null;
+            let defineUrl = typeof opts.define=="string"?opts.define:null;
+            Promise.when(
+                Module.loads(opts.imports),
+                Module.load(langUrl),
+                Module.load(defineUrl),
+                Module.loads(opts.scopes),
+                Module.loads(opts.shares),
+                Module.load(opts)
+            ).done((result)=>{
+                let [imports,langPack,define,scopes] = result;
+                this.imports = imports;
+                this.scopes = scopes;
+                resolve();
+            }).fail((err)=>{
+                reject(err);
+            }); 
         }
-        public callback(handle:ILoadCallback):IModule{
+        public callback(handle:ILoadCallback):Module{
             if(!handle) return this;
             if(this._callbacks===undefined){handle.call(this,this.value,this.error);}
             else this._callbacks.push(handle);
             return this;
         }
-        private _done():void{
-            if(this.defineProc && this.error===undefined)this.value = this.defineProc.apply(this,this.imports);
+        private _finish(success:any,error:any,resolve:Function,reject:Function):void{
+            //this.value = success;
+            this.error = error;
+            //if(this.define && this.error===undefined)this.value = this.define.apply(this,this.imports);               
             let callbacks = this._callbacks;this._callbacks = undefined;
             if(callbacks)for(let i=0,j=callbacks.length;i<j;i++){
                 callbacks[i].call(this,this.value,this.error);
             }
             
         }
-        public disposing(handler:Function):IModule{
+        public disposing(handler:Function):Module{
             if(this._disposing){
                 this._disposing.push(handler);
             }else throw "disposed";
@@ -670,20 +658,224 @@ export namespace Y {
         public static clearTimer:number;
         public static clearInterval:number = 60000;
         public static aliveMilliseconds :number = 300000;
-        public static load(url:string,callback:ILoadCallback):void{
-            let module :Module = Module.cache[url];
-            if(module){
-                module.activeTime = new Date();
-                module.callback(callback);
-                return;
+        public static cache:{[index:string]:Module} = {}
+        public static readonly None:{};
+        public static exports :any;
+        
+        public static loaders :{[index:string]:(url:string)=>Promise}={
+            "script":(url:string):Promise=>{
+                return new Promise((resolve,reject)=>{
+                    let elem:HTMLScriptElement = document.createElement("script") as HTMLScriptElement;
+                    elem.src = url;
+                    elem.type = "text/javascript";
+                    let getExports = ():any=>{
+                        let exports :any = Module.exports;
+                        if(exports===Module.None)return undefined;
+                        Module.exports = Module.None;
+                        return exports;
+                    };
+                    if(elem["onreadystatechange"]!==undefined){
+                        (elem as any).onreadystatechange = function(){
+                            if((elem as any).readyState==4 || (elem as any).readyState=="complete"){
+                                resolve({value:getExports(),element:elem});
+                            }
+                        }
+                    }else elem.onload = function(){
+                        resolve(getExports(),elem);
+                    }
+                    elem.onerror = function(ex){
+                        reject(ex,elem);
+                    }
+                    Module.getDocumentHead().appendChild(elem);
+                });
+                
+            },
+            "css":(url:string ):Promise=>{
+                return new Promise(function(resolve,reject){
+                    let elem:HTMLLinkElement = document.createElement("link") as HTMLLinkElement;
+                    elem.href = url;
+                    elem.type = "text/css";
+                    elem.rel = "stylesheet";
+                    let getExports = ():any=>{
+                        return document.stylesheets[document.stylesheets.length-1];
+                    };
+                    if(elem["onreadystatechange"]!==undefined){
+                        (elem as any).onreadystatechange = function(){
+                            if((elem as any).readyState==4 || (elem as any).readyState=="complete"){
+                                resolve({value:getExports(),element:elem});
+                            }
+                        }
+                    }else elem.onload = function(){
+                        resolve({value:getExports(),element:elem});
+                    }
+                    elem.onerror = function(ex){
+                        reject(ex,elem);
+                    }
+                
+                    Module.getDocumentHead().appendChild(elem);
+                });
+                
+            },
+            "json":(url:string):Promise=>{
+                return platform.ajax({
+                    url:url,
+                    dataType : "json"
+                }).promise((resolve,reject,prevResult:PromiseResult)=>{
+                    if(prevResult.isRejected(prevResult,reject)) return;
+                    prevResult.isResolved(prevResult,resolve);
+                });
+            },
+            "text":(url:string):Promise=>{
+                return platform.getContent(url).promise((resolve,reject,prevResult:PromiseResult)=>{
+                    if(prevResult.isRejected(prevResult,reject)) return;
+                    prevResult.isResolved(prevResult,resolve);
+                });
+            },
+            "control":(url:string):Promise=>{
+                return platform.getContent(url).promise((resolve,reject,prevResult:PromiseResult)=>{
+                    if(prevResult.isRejected(prevResult,reject)) return;
+                    let html = prevResult.value;
+                    let elem = document.createElement("div");
+                    html = html.replace("<!DOCTYPE html>","")
+                            .replace(/<html\s/i,"<div ")
+                            .replace(/<\/html>/i,"<div ")
+                            .replace(/<head\s/i,"<div class='y-head' ")
+                            .replace(/<\/head>/i,"</div>")
+                            .replace(/<body\s/i,"<div class='y-body' ")
+                            .replace(/<\/body>/i,"</div>");
+
+                    elem.innerHTML = html;
+                    let shares :Array<ModuleOpts>=[];
+                    let scopes :Array<ModuleOpts>=[];
+                    let scripts:NodeListOf<HTMLScriptElement> = elem.getElementsByTagName("script");
+                    let defineScript :HTMLScriptElement;
+                    for(let i =0,j=scripts.length;i<j;i++){
+                        let script:HTMLScriptElement = scripts[i] as HTMLScriptElement;
+                        let url:string = script.getAttribute("src");
+                        let defineAttr = script.getAttribute("y-module-define");
+                        if(defineAttr!==undefined){
+                            defineScript = script;
+                            defineScript.parentNode.removeChild(defineScript);
+                        }
+                        if(!url) continue;
+                        let alias:string = script.getAttribute("y-alias");
+                        let isScope = script.getAttribute("y-scope-resource")!==undefined;
+                        let scriptOpts :ModuleOpts = {
+                            url:url,
+                            alias:alias || url,
+                            type:ModuleTypes.script
+                        };
+                        (isScope?scopes:shares).push(scriptOpts);
+                        script.parentNode.removeChild(script);
+                    }
+                    let links = elem.getElementsByTagName("link");
+                    for(let i =0,j=links.length;i<j;i++){
+                        let link:HTMLLinkElement = links[i] as HTMLLinkElement;
+                        let url:string = link.getAttribute("href");
+                        if(!url) continue;
+                        let alias:string = link.getAttribute("y-alias");
+                        let cssOpts :ModuleOpts = {
+                            url:url,
+                            alias:alias || url,
+                            type:ModuleTypes.css
+                        };
+                        let isScope = link.getAttribute("y-scope-resource")!==undefined;
+                        (isScope?scopes:shares).push(cssOpts);
+                        link.parentNode.removeChild(link);
+                    }
+                    let moOpts:ModuleOpts = {
+                        alias: url,
+                        type: ModuleTypes.control,
+                        element : elem,
+                        scopes:scopes,
+                        shares:shares
+                    };
+
+                    if(defineScript.src){
+                        moOpts.define = defineScript.src;
+                    }else{
+                        moOpts.define = new Function(defineScript.innerHTML);
+                    }
+                    resolve(moOpts);
+                });
+                
+                
+            }
+        };
+        private static documentHead:HTMLHeadElement;
+        private static getDocumentHead():HTMLElement{
+            if(Module.documentHead)return Module.documentHead;
+            var heads = document.getElementsByTagName("head");
+            if(heads!=null && heads.length) return Module.documentHead = heads[0];
+            return document.body|| document.documentElement;
+        }
+        public static loadResource:(url:string ,type:ModuleTypes)=>Promise = function(url:string ,type:ModuleTypes):Promise{
+            return new Promise((resolve,reject)=>{
+                if(type===undefined) type = Module.getResourceType(url);
+                let loader : (url:string ,callback?:ILoadCallback)=>void = Module.loaders[ModuleTypes[<number>type]];
+                if(!loader){
+                    reject(new Error("Cannot load this resource " + name));
+                    return;
+                }
+                resolve(loader(url));
+            });
+            
+
+        }
+        public static load(urlOrOpts:string|ModuleOpts):Module{
+            let module :Module;
+            if(typeof urlOrOpts ==="string"){
+                let url : string = urlOrOpts as string;
+                module = Module.cache[url];
+                if(module){
+                    module.activeTime = new Date();
+                }else{
+                    module = new Module({url:url,alias:url});
+                }
+                return module;
             }else{
-                module = new Module(url,callback);
+                let opts :ModuleOpts = urlOrOpts as ModuleOpts;
+                module = Module.cache[opts.alias || opts.url];
+                if(module){
+                    module.activeTime = new Date();
+                    return;
+                }else{
+                    module = new Module(opts);
+                }
+                return module;
             }
         }
-        public static exportModuleOpts;
-        public static define(opts:IModuleOpts){
-            Module.exportModuleOpts = opts;
+        public static loads(deps:Array<ModuleOpts|string>):Promise{
+            return Promise.when(deps,(dep:ModuleOpts|string):Promise=>{
+                return Module.load(dep);
+            });
+            
         }
+        /*
+        public static load(url:string|IModuleOpts,callback?:ILoadCallback):IModule{
+            
+            
+        }
+        public static exports;
+        public static readonly NoneExports = {};
+        /// 1 define("jquery",$); 直接定义模块的值
+        /// 2 define(["a1.js","a2.js"],function(a1,a2){});
+        /// 3 define({id:"moduleId",..etc});
+        public static define(opts:IModuleOpts|Array<ISourceOpts|string>,define?:any){
+            let _opts:IModuleOpts;
+            if(typeof opts=="string"){
+                let urlOrId:string = opts as string;
+                if(define===undefined){
+                    throw new Error("No value was defined.");
+                }
+                _opts = {id:urlOrId,value:define};
+                Module.load(_opts);
+            }else if(isArray(opts)){
+                _opts = {imports:<Array<ISourceOpts|string>>opts,define : define};
+            }
+            Source.exports = _opts;
+            
+        }*/
         public static clearExpired(){
             let expireTime :number = (new Date()).valueOf() - Module.aliveMilliseconds|| 300000;
             let cache:{[index:string]:Module}={};
@@ -701,10 +893,13 @@ export namespace Y {
                 Module.clearTimer = undefined;
             }
         }
+        static getOpts(url:string,callback:ILoadCallback){
+            
+        }
     }
 
     
-    export let module = Module.define; 
+    //export let module = Module.define; 
 
     ////////////////////////////////////
     /// Model
@@ -1901,22 +2096,18 @@ export namespace Y {
 
     export function controll(opts:IControlOpts){
         let area:HTMLElement = (opts.area)?platform.getElement(opts.area):null;
-        Module.load(opts.url,function(this:IModule,proto:any,error?:any):void{
-            if(error){
-                opts.callback(undefined,error);
-                return;
-            }
-            let module :IModule = this as IModule;
-            if(proto===undefined){
-                if(area && this.viewTemplate) {
-                    area.innerHTML = this.viewTemplate.innerHTML;
+        Module.load(opts.url).done((module:Module)=>{
+            let proto = module.value;
+            if(module.value===undefined){
+                if(area && (module).element) {
+                    area.innerHTML = (module).element.innerHTML;
                 }
                 return;
             }
 
             let controllerType =module.data["y-controllerType"];
             if(!controllerType){
-                controllerType = proto;
+                controllerType = module.value;
                 if(typeof proto === "object"){
                     controllerType = function(){};
                     controllerType.prototype = proto;
@@ -1941,7 +2132,7 @@ export namespace Y {
 
             }
             controller.load(controller.model,controller.view);    
-            if(opts.callback) opts.callback(controller);    
+            if(opts.callback) opts.callback.call(this,controller);    
         });
     }
     
