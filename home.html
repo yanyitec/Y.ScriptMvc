@@ -8,9 +8,9 @@
     <title>Bootstrap 101 Template</title>
 
     <!-- Bootstrap -->
-    <link href="css/bootstrap.min.css" rel="stylesheet">
+    <link href="css/bootstrap.min.css" rel="stylesheet" y-alias="bootstrap.css" y-module-global >
     <!-- flat-ui -->
-    <link href="css/flat-ui.min.css" rel="stylesheet">
+    <link href="css/flat-ui.min.css" rel="stylesheet"  y-alias="flatui.css" y-module-global>
     <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
     <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
     <!--[if lt IE 9]>
@@ -22,16 +22,21 @@
   <body>
     
     <h1>你好，世界！</h1>
-    <div id="layout"></div>
+    <div id="layout">测试css加载</div>
 
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
-    <script src="scripts/jquery.min.js"></script>
+    <script src="scripts/jquery.min.js" y-alias="jquery.js" y-module-global y-module-value="jQuery"></script>
     <!-- Include all compiled plugins (below), or include individual files as needed -->
-    <script src="scripts/bootstrap.min.js"></script>
+    <script src="scripts/bootstrap.min.js" y-alias="bootstrap.js" y-module-global></script>
     <!-- the beatifull bootstrap ui -->
-    <script src="scripts/flat-ui.min.js"></script>
+    <script src="scripts/flat-ui.min.js" y-alias="flatui.js" y-module-global></script>
 
-    <script src="scripts/mvc.js" y-boot-url="sys/sys.html" y-boot-area="layout"></script>
+    <script src="scripts/mvc.js" y-boot-page="sys/sys.html" y-boot-area="layout"></script>
 
+    <script>
+      //Y.Module.loadResource("css/my.css").done(function(elem){
+      //  alert(elem);
+      //});
+    </script>
   </body>
 </html>

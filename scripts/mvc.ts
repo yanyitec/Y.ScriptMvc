@@ -5,28 +5,7 @@ export namespace Y {
     ////////////////////////////////////
     /// export interfaces
     ////////////////////////////////////
-    export interface ILoadCallback{
-        (value:any,error?:any):void;
-    }
-    
-    export enum SourceTypes{
-        module,
-        script,
-        css,
-        json,
-        text,
-        image
-    }
-    export interface ISourceOpts{
-        type:SourceTypes;
-        url:string;
-        alias?:string;
-        nocache?:boolean;
-        callback?:ILoadCallback;
-        value?:any;
-        extras?:any;
-    }
-    
+   
     
     
 
@@ -80,9 +59,10 @@ export namespace Y {
     ////////////////////////////////////
     /// 通用机制
     ///////////////////////////////////
-    export let NONE = {};
-    export let BREAK = {};
-    export let USEAPPLY ={};
+    export let NONE = {toString:function(){return "{object y-none}";}};
+    export let BREAK = {toString:function(){return "{object y-break}";}};
+    export let USEAPPLY ={toString:function(){return "{object y-useApply}";}};
+    export let debugMode :boolean = true;
     //观察者模式基类
     export class Observable{
         private __y_observable_subscriberset?:{[index:string]:Function[]};
@@ -147,20 +127,26 @@ export namespace Y {
     }
    
     export class PromiseResult{
-        public constructor(fullfilled?:boolean,value?:any,value1?:any){
-            this.value = value;this.value1 = value1;
+        public constructor(fullfilled?:boolean,value?:any,args?:any){
+            if(this.useApply = args === USEAPPLY){
+                this.args= value;
+                this.value = value[0];
+            }else{
+                this.value = value;this.args = args;
+            }
+            
             this.isFullfilled = fullfilled;
-            this.useApply = value1 === USEAPPLY;
+            
         }
         value:any;
-        value1?:any;
+        args?:any;
         isFullfilled:boolean;
         useApply:boolean;
         isRejected(me?:any,reject?:Function):boolean{
             if(!this.isFullfilled){
                 if(reject){
-                    if(this.useApply) reject.apply(me,this.value);
-                    else reject.call(me,this.value,this.value1);
+                    if(this.useApply) reject.apply(me,this.args);
+                    else reject.call(me,this.value,this.args);
                 }
                 return true;
             }
@@ -169,8 +155,8 @@ export namespace Y {
         isResolved(me?:any,resolve?:Function):boolean{
             if(this.isFullfilled){
                 if(resolve){
-                    if(this.useApply) resolve.apply(me,this.value);
-                    else resolve.call(me,this.value,this.value1);
+                    if(this.useApply) resolve.apply(me,this.args);
+                    else resolve.call(me,this.value,this.args);
                 }
                 
                 return true;
@@ -178,89 +164,96 @@ export namespace Y {
             return false;
         }
     }
-    export class Promise{
-        __y_promise_resolves?: Array<(value:any)=>any>;
-        __y_promise_rejects?:Array<(value:any)=>any>;
+    export interface IThenable{
+        then(resolve:Function,reject?:Function,ck?:boolean):IThenable;
+    }
+    
+    
+    export class Promise implements IThenable{
+        __y_promise_resolves?: Function[];
+        __y_promise_rejects?: Function[];
         __y_promise_result?:PromiseResult;
-        __y_promise_promises?:Promise[];
-        resolve?:(value?:any)=>Promise;
-        reject?:(value?:any)=>Promise;
+        resolve?:Function;
+        reject?:Function;
 
-        constructor(param?:any,statement?:Function){
-            let resolve : (value?:any,value1?:any)=>any=(value?:any,value1?:any)=>{
-                if(value===this) throw new TypeError("cannot use self promise as fullfilled value.");
-                let vt = typeof(value);
-                if(value instanceof Promise){
-                    let other :Promise = value as Promise;
-                    if(!(this.__y_promise_result = other.__y_promise_result)){
-                        (other.__y_promise_promises||(other.__y_promise_promises=[])).push(this);
-                    }else{
-                        this.__y_promise_complete(other.__y_promise_result);
-                    }
-                }else if(vt==="object"){
-                    if((value as Promise).then){
-                        (value as Promise).then(resolve,reject,true);
-                    }else{
-                        let result :PromiseResult = new PromiseResult(true,value,value1);
-                        this.__y_promise_complete(result);
-                    }
-                }else if(vt==="function"){
-                    (value as (val:any)=>void).call(this,resolve,reject);
-                }else{
-                    let result :PromiseResult =  new PromiseResult(true,value,value1);
-                    this.__y_promise_complete(result);
+        constructor(statement?:any,param?:any){
+            let me :Promise = this;
+            let resolve = function(value?:any,value1?:any):void{
+                
+                if(value===me) {
+                    var ex = new TypeError("cannot use self promise as fullfilled value.");
+                    logger.warn(ex,"y/Promise.resolve");
                 }
-                return this;
+                let vt = typeof value;
+                if(vt==="function"){
+                    try{
+                        (value as Function).call(me,resolve,reject,param);
+                    }catch(ex){
+                        logger.error(ex,"y/Module.resolve");
+                        this.__y_promise_fullfill(false,ex);
+                    }
+                }else if(vt==="object" && (<IThenable>value).then) {
+                    
+                    (<IThenable>value).then(
+                        function(v1,v2){arguments.length<=2?me.__y_promise_fullfill(true,v1,v2): me.__y_promise_fullfill(true,toArray(arguments),USEAPPLY);}
+                        ,function(v1,v2){arguments.length<=2?me.__y_promise_fullfill(false,v1,v2): me.__y_promise_fullfill(false,toArray(arguments),USEAPPLY);}
+                    );
+                }else {
+                    arguments.length<=2?me.__y_promise_fullfill(true,value,value1): me.__y_promise_fullfill(true,toArray(arguments),USEAPPLY);
+                }
             };
-            let reject : (value?:any,value1?:any)=>any=(value?:any,value1?:any)=>{this.__y_promise_complete( new PromiseResult(false,value,value1));}
-            if(statement===undefined) {
-                statement = param as Function;
-                param = statement;
+            let reject = function(v1,v2){arguments.length<=2?me.__y_promise_fullfill(false,v1,v2): me.__y_promise_fullfill(false,toArray(arguments),USEAPPLY);}
+            if(typeof statement!=="function"){
+                resolve.call(this,statement);
             }
-            if(statement){
-                try{
-                    statement.call(this,resolve,reject,param);
-                }catch(ex){
-                    this.__y_promise_complete( new PromiseResult(false,ex));
-                }
-            }else{
+            if(statement===undefined){
                 this.resolve = resolve;
                 this.reject = reject;
+            }else{
+                if(typeof statement==="function"){
+                    try{
+                        statement.call(me,resolve,reject,param);
+                    }catch(ex){
+                        logger.error(ex,"y/Promise.constructor");
+                        me.__y_promise_fullfill( false,ex);
+                    }
+                }else{
+                    resolve.call(this,statement===NONE?undefined:statement);
+                }
             }
-
         }
-        private __y_promise_complete(result:PromiseResult):void{
-            let handlers :Array<(value:any)=>any> = result.isRejected ? this.__y_promise_rejects : this.__y_promise_resolves;
-            let promises :Promise[] = this.__y_promise_promises;
-            this.__y_promise_result = result;
-            //this.__y_promise_status = isRejected?PromiseStates.Rejected:PromiseStates.Resolved;
-            this.__y_promise_promises =undefined;
+        private __y_promise_fullfill(isFullfilled:boolean|PromiseResult,value?:any,value1?:any):void{
+            if(typeof isFullfilled !=="boolean") {
+                this.__y_promise_result = isFullfilled as PromiseResult;
+                return;
+            }
+            let handlers :Function[] = isFullfilled ? this.__y_promise_resolves : this.__y_promise_rejects;
+            let result:PromiseResult = this.__y_promise_result = new PromiseResult(isFullfilled as boolean,value,value1);
             this.__y_promise_rejects = undefined;
             this.__y_promise_resolves = undefined;
             this.resolve = this.reject = undefined;
             if(handlers){
-                setImmediate(()=>{
-                    if(result.useApply)for(let i =0,j=handlers.length;i<j;i++) handlers[i].apply(this,result);
-                    else for(let i =0,j=handlers.length;i<j;i++) handlers[i].call(this,result);
+                platform.async(()=>{
+                    if(result.useApply)for(let i =0,j=handlers.length;i<j;i++) handlers[i].apply(this,result.args);
+                    else for(let i =0,j=handlers.length;i<j;i++) handlers[i].call(this,result.value,result.args);
                 });
             }
-            if(promises && promises.length){
-                for(let i =0,j=promises.length;i<j;i++) promises[i].__y_promise_complete(result);
-            }
+            
         }
-        then(resolve:(value:any)=>any,reject?:(value:any)=>any,ck?:boolean):Promise{
-            this.done(resolve,ck).fail(reject,ck);
-            return this;
+        then(resolve:boolean|Function,reject?:boolean|Function,ck?:boolean):IThenable{
+            if(resolve===true|| resolve===false) return this.fail(<Function>reject,resolve as boolean);
+            if(reject===true|| reject ===false) return this.done(<Function>resolve,reject as boolean);
+            return this.done(<Function>resolve,ck).fail(<Function>reject,ck);
         }
-        done(handle:(value:any)=>any,ck?:boolean):Promise{
-            if(!handle) return this;
+        done(handle:Function,ck?:boolean):Promise{
+            if(typeof handle!=="function") return this;
             let result :PromiseResult = this.__y_promise_result;
             if(result){
                  result.isResolved(this,handle);
             }else{
-                let handlers = this.__y_promise_rejects;
-                if(!ck || handlers || handlers.length==0)
-                    (this.__y_promise_rejects||(this.__y_promise_rejects=[])).push(handle);
+                let handlers = this.__y_promise_resolves||(this.__y_promise_resolves=[]);
+                if(!ck || handlers.length==0)
+                    handlers.push(handle);
                 else {
                     for(let i=0,j=handlers.length;i<j;i++) if(handlers[i]===handle)return;
                     handlers.push(handle);
@@ -268,15 +261,15 @@ export namespace Y {
             }
             return this;
         }
-        fail(handle:(value:any)=>any,ck?:boolean):Promise{
-            if(!handle) return this;
+        fail(handle:Function,ck?:boolean):Promise{
+            if(typeof handle !=="function") return this;
             let result :PromiseResult = this.__y_promise_result;
             if(result){
                 result.isRejected(this,handle);
             }else{
-                let handlers = this.__y_promise_rejects;
-                if(!ck || handlers || handlers.length==0)
-                    (this.__y_promise_rejects||(this.__y_promise_rejects=[])).push(handle);
+                let handlers = this.__y_promise_rejects||(this.__y_promise_rejects=[]);
+                if(!ck || handlers.length==0)
+                    handlers.push(handle);
                 else {
                     for(let i=0,j=handlers.length;i<j;i++) if(handlers[i]===handle)return;
                     handlers.push(handle);
@@ -284,51 +277,127 @@ export namespace Y {
             }
             return this;
         }
-        promise(promise):Promise{
-            let result = new Promise();
-            let resolve =result.resolve;
-            let reject = result.reject;
+        complete(handle:Function,ck?:boolean):Promise{
+            if(typeof handle !=="function") return this;
+            let callback = ()=>handle.call(this,this.__y_promise_result);
+            return this.then(callback,callback,ck) as Promise;
+        }
+        promise(promise:Function):Promise{
+            let result:Promise = new Promise();
+            let {resolve,reject}   = result;
             result.resolve = result.reject = undefined;
-            result.done((value)=>{
-                promise.call(result,resolve,reject,this.__y_promise_result);
-            }).fail(()=>{
-                promise.call(result,resolve,reject,this.__y_promise_result);
-            });
+            this.then(
+                function(){ platform.async(()=> promise.call(result,resolve,reject,(<Promise>this).__y_promise_result));}
+                ,function(){ result.__y_promise_fullfill((<Promise>this).__y_promise_result);}
+            );
             return result;
             
         }
-        static when(...args:any[]):Promise{
-            if(isArray(args[0])){
+        
+        //Usage:
+        //1 when([m1,m2],(m)=>new Promise(m)) 第一个参数是数组
+        // 2 when(promise1,promiseFun2,IThenable)
+        static when(deps,promiseMaker?:any,arg2?:any,arg3?:any,arg4?:any,arg5?:any):Promise{   
+            if(isArray(deps)){
+                //处理第一种用法
                 return new Promise((resolve,reject)=>{
-                    let [deps,promise] = args;
+                    //let [deps,promiseMaker] = args;
                     let result=[];
-                    let taskCount =args.length;
+                    let taskCount =deps.length;
                     let hasError :any;
                     for(let i =0,j=taskCount;i<j;i++){
                         let dep = deps[i];
-                        if(!promise)continue;
-                        if(typeof promise==="function") dep = new Promise(promise);
-                        if(!(<Promise>promise).then) {
-                            if(!promise) throw new Error("promise make located at arguments[1] is required.");
-                            dep = promise(dep);
-                        } 
-                        (dep as Promise).done((value)=>{
+                        if(typeof dep==="function") dep = new Promise(dep);
+                        else if(!dep || !(<Promise>dep).then) {
+                            if(!promiseMaker) throw new Error("promise make located at arguments[1] is required.");
+                            dep = promiseMaker(dep);
+                        }
+                        if(!dep) throw new Error("Cannot make " + deps[i] + " as Promise.");
+                        (dep as Promise).then((value)=>{
                             if(hasError) return;
                             result[i] = value;
                             if(--taskCount==0) resolve(result);
-                        }).fail((err)=>{
+                        },(err)=>{
                             hasError = err;
                             reject(err);
                         });
                     }
                 });
             }else {
-                return Promise.when(args);
+                return Promise.when(toArray(arguments));
             }
         }
+        static readonly placehold :Promise = new Promise(NONE);
         
+    }  
+    export enum LogLevels{
+        error,
+        warning,
+        notice,
+        info,
+        debug
     }
+
+    export interface ILogger{
+        error(message:any,path?:string):any;
+        warn(message:any,path?:string):any;
+        notice(message:any,path?:string):any;
+        info(message:any,path?:string):any;
+        debug(message:any,path?:string):any;
+    }
+    export class Log{
+        constructor(message,path:string="",lv:LogLevels=LogLevels.info){
+            this.path = path;
+            this.level = lv;
+            this.time = new Date();
+            if(debugMode) {
+                if(message instanceof Error){
+                    let err :Error = message as Error;
+                    if(!err.stack){
+                        try{
+                            throw err;
+                        }catch(ex){
+                            message = ex;
+                        }
+                    }
+                }
+            }
+            this.message = message;
+        }
+        level?:LogLevels|string;
+        message:any;
+        path?:string;
+        time:Date;
+        toString(){
+            let lv = this.level===undefined?LogLevels[LogLevels.info]:(typeof this.level ==="string"?this.level:LogLevels[this.level]);
+            return "["+lv + ":"+(this.path||"")+"]" + this.message;
+        }
+
+        static error(message:any,path:string):any{
+            console.error(new Log(message,path,LogLevels.error));
+        }
+        static warn(message:any,path?:string):any{
+            
+            console.warn(new Log(message,path,LogLevels.warning));
+        }
+        static notice(message:any,path?:string):any{
+            console.log(new Log(message,path,LogLevels.notice));
+        }
+        static info(message:any,path?:string):any{
+            console.info(new Log(message,path,LogLevels.info));
+        }
+        static debug(message:any,path?:string):any{
+            if(debugMode)console.debug(new Log(message,path,LogLevels.debug));
+        }
+    } 
     
+    export let logger :ILogger = {
+        error:Log.error,
+        warn:Log.warn,
+        notice:Log.notice,
+        info:Log.info,
+        debug:Log.debug
+    };
     
     
     ////////////////////////////////////
@@ -342,15 +411,14 @@ export namespace Y {
         attach(elem:EventTarget,evtName:string,evtHandler:Function):void{}
         //解除事件
         detech(elem:EventTarget,evtName:string,evtHandler:Function):void{}
+        async(handler:(...args:any[])=>any):number{return 0;}
         
         constructor(){
             this.attach = window["attachEvent"] ? function (elem, evtname, fn) { (elem as any).attachEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.addEventListener(evtname, fn as EventListenerOrEventListenerObject, false); };
 	        this.detech = window["detechEvent"] ? function (elem,evtname,  fn) { (elem as any).detechEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.removeEventListener(evtname, fn as EventListenerOrEventListenerObject, false); }
-            
+            this.async = window["setImmediate"]?(handler:(...args:any[])=>any):number=>{return setImmediate(handler);} :(handler:(...args:any[])=>any):number=>{return setTimeout(handler,0);}
         }
-        alert(message:string):void{
-            window.alert(message);
-        }
+        
         cloneNode(elem:HTMLElement):HTMLElement{
             var tag = elem.tagName;
             if (elem.cloneNode) return elem.cloneNode(true) as HTMLElement;
@@ -393,7 +461,7 @@ export namespace Y {
             }else return selector;
         }
         //获取内容
-        getContent(url:string):Promise{
+        getStatic(url:string):Promise{
             return this.ajax({
                 url:url,
                 method:"GET"
@@ -435,7 +503,7 @@ export namespace Y {
                 if(headers) for(let n in headers) http.setRequestHeader(n,headers[n]);  
                 var httpRequest:XMLHttpRequest = http as XMLHttpRequest; 
                 httpRequest.onreadystatechange = ()=>{
-                    if(httpRequest.readyState==4 && opts.callback){
+                    if(httpRequest.readyState==4){
                         let result;
                         if(opts.dataType=="json"){ result = JSON.parse(httpRequest.responseText);}
                         else if(opts.dataType=="xml"){result = httpRequest.responseXML;}
@@ -444,6 +512,7 @@ export namespace Y {
                     }
                 };
                 httpRequest.onerror = (err)=>{
+                    logger.error(err,"y/ajax");
                     reject(err,httpRequest);
                 };
                 
@@ -458,10 +527,14 @@ export namespace Y {
 
     export let platform:Platform= new Platform();
     let o2Str:Function = Object.prototype.toString;
-
     export function isArray(o:any){
         if(!o)return false;
-        return o2Str.call(o) == "[Object Array]";
+        return o2Str.call(o) == "[object Array]";
+    }
+    let aslice :Function = Array.prototype.slice;
+    export function toArray(o:any):any[]{
+        if(!o) return [];
+        return aslice.call(o);
     }
     
 
@@ -474,12 +547,6 @@ export namespace Y {
         if(langId===lng) return;
     }
 
-    
-    
-
-    
-
-    
 
     ////////////////////////////////////
     /// 模块化
@@ -493,17 +560,19 @@ export namespace Y {
         disposing:(module:Module)=>void;
     }
     export enum ModuleTypes{
-        control,
+        none,
         script,
         css,
         json,
         text,
-        image
+        image,
+        page
     }
     export class ModuleOpts{
-        alias:string;
+        alias?:string;
         type?:ModuleTypes;
         url?:string;
+        basUrl?:string;
         value?:any;
         expiry?:number|Date;
         element?:HTMLElement;
@@ -511,6 +580,7 @@ export namespace Y {
         scopes?:Array<string|ModuleOpts>;
         imports?:Array<string|ModuleOpts>;
         lang?:string;
+        inScope?:boolean;
         data?:{[index:string]:any};
         define?:Function|string;
     }
@@ -518,6 +588,7 @@ export namespace Y {
         //资源的唯一编号
         alias?:string;
         url?:string;
+        basUrl?:string;
         //load返回的值
         value:any;
         //资源类型
@@ -530,36 +601,42 @@ export namespace Y {
         element?:HTMLElement;
         texts?:{[index:string]:string};
         scopes:any;
-        
+        shares:any;
         imports:Array<any>;
         _disposing:Array<Function>;
-        _callbacks:Array<Function>;
         error:any;
         activeTime:Date;
+        container?:Module;
        
-        public constructor(opts:ModuleOpts){
+        public constructor(opts:ModuleOpts,container?:Module){
             super();
             let me :Module = this;
+            this.container = container;
             this.alias = opts.alias|| opts.url;
             this.url = opts.url;
-            this.type = opts.type || Module.getResourceType(opts.url);
-            if(this.type===undefined) {
-                throw new Error("Cannot get module type.");
-            }
+            this.basUrl = opts.basUrl;
             this.ref_count = 0;
             this._disposing = [];
-            this._callbacks = [];
-            this.data = opts.data;
-            if(!this.data) this.data = {};
-            if(opts.expiry){
-                this.expiry = opts.expiry;
-                this.activeTime = new Date();
+            this.data = opts.data || {};
+            this.type = opts.type || Module.getResType(opts.url) || ModuleTypes.none;
+            this.expiry = opts.expiry;
+            this.activeTime = new Date();
+            this.element = opts.element;
+            this.value = opts.value;
+            if(this.type === ModuleTypes.none){
+                this.resolve();
+                return;
+            }
+            if(this.value!==undefined || this.value ===NONE){
+                this.resolve(this.value);return;
+            }
+            if(opts.expiry!=-1){
                 if(!Module.clearTimer)Module.clearTimer = setInterval(Module.clearExpired,Module.clearInterval || 60000);
             }
             let {resolve,reject} = this;
             this.reject = this.reject = undefined;
             if(this.url){
-                Module.loadResource(this.url,this.type).then((newOpts)=>{
+                Module.loadRes(this.url,this.type).then((newOpts)=>{
                     this._combineModuleOpts(opts,newOpts);
                     this._init(opts,resolve,reject);
                 },(err)=>reject(err));
@@ -569,20 +646,19 @@ export namespace Y {
             
         }
 
-        public static getResourceType(url:string):ModuleTypes{
+        public static getResType(url:string):ModuleTypes{
             if(!url)return;
             if(/.js$/i.test(url))return ModuleTypes.script;
             if(/.css$/i.test(url)) return ModuleTypes.css;
             if(/.json$/i.test(url)) return ModuleTypes.json;
-            if(/(?:.html$)|(?:.htm$)/i.test(url)) return ModuleTypes.control;
+            if(/(?:.html$)|(?:.htm$)/i.test(url)) return ModuleTypes.page;
             if(/(?:.jpg$)|(?:.png$)|(?:.bmp$)|(?:.gif$)/i.test(url)) return ModuleTypes.image;
             return undefined;
-            
         }
 
         private _combineModuleOpts(dest:ModuleOpts,src?:ModuleOpts):ModuleOpts{
             if(!src){return dest;}
-
+            dest.expiry = dest.expiry;
             dest.define = src.define;
             dest.lang = src.lang;
             dest.data = src.data;
@@ -601,44 +677,49 @@ export namespace Y {
                 }
             }
             if(src.imports)dest.imports = src.imports;
+            dest.element = src.element;
             return dest;
         } 
         private _init(opts:ModuleOpts,resolve:Function,reject:Function){
             let me :Module = this;
             this.element = opts.element;
-            let depScripts:Array<Module> = [];
             let langUrl = opts.lang?opts.lang.replace("{language}",langId):null;
             let defineUrl = typeof opts.define=="string"?opts.define:null;
+            let add_ref :(deps:Module[])=>void = (deps:Module[]):void=>{
+                if(!deps)return;
+                for(let i=0,j=deps.length;i<j;i++){
+                    let dep = deps[i];
+                    if(dep){
+                        dep.ref_count++;
+                    }
+                }
+            };
+            let tasks = [];
+            
+            
             Promise.when(
-                Module.loads(opts.imports),
-                Module.load(langUrl),
-                Module.load(defineUrl),
-                Module.loads(opts.scopes),
-                Module.loads(opts.shares),
-                Module.load(opts)
+                langUrl?this.load(langUrl):Promise.placehold,
+                defineUrl?this.load(defineUrl):Promise.placehold,
+                opts.imports?this.loadMany(opts.imports):Promise.placehold,
+                opts.scopes?this.loadMany(opts.scopes):Promise.placehold,
+                opts.shares?this.loadMany(opts.shares):Promise.placehold
             ).done((result)=>{
-                let [imports,langPack,define,scopes] = result;
-                this.imports = imports;
-                this.scopes = scopes;
-                resolve();
+                let [langPack,define,imports,scopes,globals] = result;
+                add_ref(this.shares= globals);
+                add_ref(this.scopes = scopes);
+                add_ref(this.imports = imports);
+               
+                this._finish(this.value,resolve);
             }).fail((err)=>{
                 reject(err);
             }); 
         }
-        public callback(handle:ILoadCallback):Module{
-            if(!handle) return this;
-            if(this._callbacks===undefined){handle.call(this,this.value,this.error);}
-            else this._callbacks.push(handle);
-            return this;
-        }
-        private _finish(success:any,error:any,resolve:Function,reject:Function):void{
+        
+        private _finish(success:any,resolve:Function):void{
             //this.value = success;
-            this.error = error;
+            
             //if(this.define && this.error===undefined)this.value = this.define.apply(this,this.imports);               
-            let callbacks = this._callbacks;this._callbacks = undefined;
-            if(callbacks)for(let i=0,j=callbacks.length;i<j;i++){
-                callbacks[i].call(this,this.value,this.error);
-            }
+            
             
         }
         public disposing(handler:Function):Module{
@@ -650,6 +731,26 @@ export namespace Y {
 
         public dispose():void{
             if(this._disposing===undefined)return;
+            let release_ref :(deps:Module[],expireTime:number)=>void=(deps:Module[],expireTime:number):void=>{
+                if(!deps)return;
+                for(let i=0,j=deps.length;i<j;i++){
+                    let dep = deps[i];
+                    if(dep){
+                        if(--dep.ref_count==0 && dep.expiry && dep.activeTime.valueOf()<expireTime){
+                            if(dep.alias) delete Module.cache[dep.alias];
+                            if(dep.url) delete Module.cache[dep.url];
+                        }
+                    }
+                }
+            };
+            let expireTime :number = (new Date()).valueOf() - Module.aliveMilliseconds|| 300000;
+            release_ref(this.scopes,expireTime);
+            release_ref(this.imports,expireTime);
+            release_ref(this.shares,expireTime);
+            this.scopes = this.imports = this.shares = undefined;
+            if(this.value && this.value.dispose){
+                this.value.dispose();
+            }
             for(var n in this._disposing){
                 var fn = this._disposing[n];
                 fn.call(this);
@@ -658,8 +759,7 @@ export namespace Y {
         public static clearTimer:number;
         public static clearInterval:number = 60000;
         public static aliveMilliseconds :number = 300000;
-        public static cache:{[index:string]:Module} = {}
-        public static readonly None:{};
+        public static cache:{[index:string]:Module} = {};
         public static exports :any;
         
         public static loaders :{[index:string]:(url:string)=>Promise}={
@@ -670,8 +770,8 @@ export namespace Y {
                     elem.type = "text/javascript";
                     let getExports = ():any=>{
                         let exports :any = Module.exports;
-                        if(exports===Module.None)return undefined;
-                        Module.exports = Module.None;
+                        if(exports===NONE)return undefined;
+                        Module.exports = NONE;
                         return exports;
                     };
                     if(elem["onreadystatechange"]!==undefined){
@@ -681,34 +781,36 @@ export namespace Y {
                             }
                         }
                     }else elem.onload = function(){
-                        resolve(getExports(),elem);
+                        resolve({value:getExports(),element:elem,url:url,type:ModuleTypes.script});
                     }
                     elem.onerror = function(ex){
+                        logger.error(ex,"y/module.loadRes");
                         reject(ex,elem);
                     }
                     Module.getDocumentHead().appendChild(elem);
                 });
                 
             },
-            "css":(url:string ):Promise=>{
+            "css":(url:string):Promise=>{
                 return new Promise(function(resolve,reject){
                     let elem:HTMLLinkElement = document.createElement("link") as HTMLLinkElement;
                     elem.href = url;
                     elem.type = "text/css";
                     elem.rel = "stylesheet";
                     let getExports = ():any=>{
-                        return document.stylesheets[document.stylesheets.length-1];
+                        return document.styleSheets[document.styleSheets.length-1];
                     };
                     if(elem["onreadystatechange"]!==undefined){
                         (elem as any).onreadystatechange = function(){
                             if((elem as any).readyState==4 || (elem as any).readyState=="complete"){
-                                resolve({value:getExports(),element:elem});
+                                resolve({value:getExports(),element:elem,url:url,type:ModuleTypes.css});
                             }
                         }
                     }else elem.onload = function(){
-                        resolve({value:getExports(),element:elem});
+                        resolve({value:getExports(),element:elem,url:url});
                     }
                     elem.onerror = function(ex){
+                        logger.error(ex,"y/module.loadRes");
                         reject(ex,elem);
                     }
                 
@@ -717,89 +819,98 @@ export namespace Y {
                 
             },
             "json":(url:string):Promise=>{
-                return platform.ajax({
-                    url:url,
-                    dataType : "json"
-                }).promise((resolve,reject,prevResult:PromiseResult)=>{
-                    if(prevResult.isRejected(prevResult,reject)) return;
-                    prevResult.isResolved(prevResult,resolve);
+                return new Promise((resolve,reject)=>{
+                    platform.getStatic(url).done((text)=>{
+                        try{
+                            let json = JSON.parse(text);
+                            resolve({value:json,url:url,type:ModuleTypes.json});
+                        }catch(ex){
+                            reject(ex);
+                        }
+                    }).fail(reject);
                 });
             },
             "text":(url:string):Promise=>{
-                return platform.getContent(url).promise((resolve,reject,prevResult:PromiseResult)=>{
-                    if(prevResult.isRejected(prevResult,reject)) return;
-                    prevResult.isResolved(prevResult,resolve);
+                return new Promise((resolve,reject)=>{
+                    platform.getStatic(url).done((text)=>{
+                        resolve({value:text,url:url,type:ModuleTypes.text});
+                    }).fail(reject);
                 });
+                
             },
-            "control":(url:string):Promise=>{
-                return platform.getContent(url).promise((resolve,reject,prevResult:PromiseResult)=>{
-                    if(prevResult.isRejected(prevResult,reject)) return;
-                    let html = prevResult.value;
-                    let elem = document.createElement("div");
-                    html = html.replace("<!DOCTYPE html>","")
-                            .replace(/<html\s/i,"<div ")
-                            .replace(/<\/html>/i,"<div ")
-                            .replace(/<head\s/i,"<div class='y-head' ")
-                            .replace(/<\/head>/i,"</div>")
-                            .replace(/<body\s/i,"<div class='y-body' ")
-                            .replace(/<\/body>/i,"</div>");
+            "page":(url:string):Promise=>{
+                return new Promise((resolve,reject)=>{
+                    platform.getStatic(url).done((html)=>{
+                        let elem = document.createElement("div");
+                        html = html.replace("<!DOCTYPE html>","")
+                                .replace(/<html\s/i,"<div ")
+                                .replace(/<\/html>/i,"<div ")
+                                .replace(/<head\s/i,"<div class='y-head' ")
+                                .replace(/<\/head>/i,"</div>")
+                                .replace(/<body\s/i,"<div class='y-body' ")
+                                .replace(/<\/body>/i,"</div>");
 
-                    elem.innerHTML = html;
-                    let shares :Array<ModuleOpts>=[];
-                    let scopes :Array<ModuleOpts>=[];
-                    let scripts:NodeListOf<HTMLScriptElement> = elem.getElementsByTagName("script");
-                    let defineScript :HTMLScriptElement;
-                    for(let i =0,j=scripts.length;i<j;i++){
-                        let script:HTMLScriptElement = scripts[i] as HTMLScriptElement;
-                        let url:string = script.getAttribute("src");
-                        let defineAttr = script.getAttribute("y-module-define");
-                        if(defineAttr!==undefined){
-                            defineScript = script;
-                            defineScript.parentNode.removeChild(defineScript);
+                        elem.innerHTML = html;
+                        let shares :Array<ModuleOpts>=[];
+                        let scopes :Array<ModuleOpts>=[];
+                        let scripts:any[] = toArray(elem.getElementsByTagName("script"));
+                        let defineScript :HTMLScriptElement;
+                        for(let i =0,j=scripts.length;i<j;i++){
+                            let script:HTMLScriptElement = scripts[i] as HTMLScriptElement;
+                            let url:string = script.getAttribute("src");
+                            let defineAttr = script.getAttribute("y-module-define");
+                            if(defineAttr!==undefined){
+                                defineScript = script;
+                                defineScript.parentNode.removeChild(defineScript);
+                            }
+                            if(!url) continue;
+                            let alias:string = script.getAttribute("y-alias");
+                            
+                            let scriptOpts :ModuleOpts = {
+                                url:url,
+                                alias:alias || url,
+                                type:ModuleTypes.script,
+                            };
+                            let isScope = script.getAttribute("y-module-scope");
+                            let isGlobal = script.getAttribute("y-module-global");
+                            if(isGlobal!==null && isGlobal!==undefined)scriptOpts.expiry = -1;
+                            (isScope!==null&&isScope!==undefined?scopes:shares).push(scriptOpts);
+                            script.parentNode.removeChild(script);
                         }
-                        if(!url) continue;
-                        let alias:string = script.getAttribute("y-alias");
-                        let isScope = script.getAttribute("y-scope-resource")!==undefined;
-                        let scriptOpts :ModuleOpts = {
-                            url:url,
-                            alias:alias || url,
-                            type:ModuleTypes.script
+                        let links:any[] = toArray(elem.getElementsByTagName("link"));
+                        for(let i =0,j=links.length;i<j;i++){
+                            let link:HTMLLinkElement = links[i] as HTMLLinkElement;
+                            let url:string = link.getAttribute("href");
+                            if(!url) continue;
+                            let alias:string = link.getAttribute("y-alias");
+                            
+                            let cssOpts :ModuleOpts = {
+                                url:url,
+                                alias:alias || url,
+                                type:ModuleTypes.css
+                            };
+                            let isScope = link.getAttribute("y-module-scope");
+                            let isGlobal = link.getAttribute("y-module-global");
+                            if(isGlobal!==null && isGlobal!==undefined)cssOpts.expiry = -1;
+                            (isScope!==null&&isScope!==undefined?scopes:shares).push(cssOpts);
+                            link.parentNode.removeChild(link);
+                        }
+                        let moOpts:ModuleOpts = {
+                            url: url,
+                            type: ModuleTypes.page,
+                            element : elem,
+                            scopes:scopes,
+                            shares:shares
                         };
-                        (isScope?scopes:shares).push(scriptOpts);
-                        script.parentNode.removeChild(script);
-                    }
-                    let links = elem.getElementsByTagName("link");
-                    for(let i =0,j=links.length;i<j;i++){
-                        let link:HTMLLinkElement = links[i] as HTMLLinkElement;
-                        let url:string = link.getAttribute("href");
-                        if(!url) continue;
-                        let alias:string = link.getAttribute("y-alias");
-                        let cssOpts :ModuleOpts = {
-                            url:url,
-                            alias:alias || url,
-                            type:ModuleTypes.css
-                        };
-                        let isScope = link.getAttribute("y-scope-resource")!==undefined;
-                        (isScope?scopes:shares).push(cssOpts);
-                        link.parentNode.removeChild(link);
-                    }
-                    let moOpts:ModuleOpts = {
-                        alias: url,
-                        type: ModuleTypes.control,
-                        element : elem,
-                        scopes:scopes,
-                        shares:shares
-                    };
 
-                    if(defineScript.src){
-                        moOpts.define = defineScript.src;
-                    }else{
-                        moOpts.define = new Function(defineScript.innerHTML);
-                    }
-                    resolve(moOpts);
+                        if(defineScript.src){
+                            moOpts.define = defineScript.src;
+                        }else{
+                            moOpts.define = new Function(defineScript.innerHTML);
+                        }
+                        resolve(moOpts);
+                    }).fail(reject);
                 });
-                
-                
             }
         };
         private static documentHead:HTMLHeadElement;
@@ -809,47 +920,52 @@ export namespace Y {
             if(heads!=null && heads.length) return Module.documentHead = heads[0];
             return document.body|| document.documentElement;
         }
-        public static loadResource:(url:string ,type:ModuleTypes)=>Promise = function(url:string ,type:ModuleTypes):Promise{
+        public static loadRes:(url:string ,type?:ModuleTypes)=>Promise = function(url:string ,type?:ModuleTypes):Promise{
+            if(!url) return new Promise(Module.nonRes);
             return new Promise((resolve,reject)=>{
-                if(type===undefined) type = Module.getResourceType(url);
-                let loader : (url:string ,callback?:ILoadCallback)=>void = Module.loaders[ModuleTypes[<number>type]];
+                if(type===undefined) type = Module.getResType(url);
+                let loader : (url:string)=>void = Module.loaders[ModuleTypes[<number>type]];
                 if(!loader){
-                    reject(new Error("Cannot load this resource " + name));
+                    let ex = new Error("Cannot load this resource " + name);
+                    logger.error(ex,"y/module.loadRes");
+                    reject(ex);
                     return;
                 }
                 resolve(loader(url));
             });
-            
-
         }
-        public static load(urlOrOpts:string|ModuleOpts):Module{
-            let module :Module;
+        public toString(){
+            return "{object,Module(alias:"+this.alias+",url:"+this.url+",type:"+ModuleTypes[this.type]+")}";
+        }
+        public static readonly empty :Module = new Module({type : ModuleTypes.none});
+        public static readonly nonRes :ModuleOpts = {type : ModuleTypes.none};
+        public load(urlOrOpts:string|ModuleOpts):Module{
+            if(!urlOrOpts) {
+                logger.warn(new Error("empty argument"),"y/Module.load");
+                return Module.empty;
+            }
+            let opts :ModuleOpts;
             if(typeof urlOrOpts ==="string"){
-                let url : string = urlOrOpts as string;
-                module = Module.cache[url];
-                if(module){
-                    module.activeTime = new Date();
-                }else{
-                    module = new Module({url:url,alias:url});
-                }
-                return module;
-            }else{
-                let opts :ModuleOpts = urlOrOpts as ModuleOpts;
-                module = Module.cache[opts.alias || opts.url];
-                if(module){
-                    module.activeTime = new Date();
-                    return;
-                }else{
-                    module = new Module(opts);
-                }
+                opts = {url:<string>urlOrOpts,alias:<string>urlOrOpts};
+            } else opts = urlOrOpts;
+            let module :Module = Module.cache[opts.alias] || Module.cache[opts.url];
+            if(module){
+                module.activeTime = new Date();
                 return module;
             }
+            module = new Module(opts,this);
+            Module.cache[module.alias] = Module.cache[module.alias] = module;
+            return module;
         }
-        public static loads(deps:Array<ModuleOpts|string>):Promise{
+        public loadMany(deps:Array<ModuleOpts|string>):Promise{
+            if(!deps ){
+                logger.warn(new Error("empty argument"),"y/Module.loadMany");
+                return Module.empty; 
+            } 
+            if(deps.length==0) return Module.empty;
             return Promise.when(deps,(dep:ModuleOpts|string):Promise=>{
-                return Module.load(dep);
+                return this.load(dep);
             });
-            
         }
         /*
         public static load(url:string|IModuleOpts,callback?:ILoadCallback):IModule{
@@ -877,7 +993,7 @@ export namespace Y {
             
         }*/
         public static clearExpired(){
-            let expireTime :number = (new Date()).valueOf() - Module.aliveMilliseconds|| 300000;
+            /*let expireTime :number = (new Date()).valueOf() - Module.aliveMilliseconds|| 300000;
             let cache:{[index:string]:Module}={};
             let moduleCache:{[index:string]:Module}=Module.cache;
             let count:number = 0;
@@ -891,12 +1007,65 @@ export namespace Y {
             if(count===0) {
                 clearInterval(Module.clearTimer);
                 Module.clearTimer = undefined;
-            }
+            }*/
         }
-        static getOpts(url:string,callback:ILoadCallback){
-            
-        }
+        static root:Module;
     }
+
+    platform.attach(window,"load",function(){
+        let rootOpts :ModuleOpts={url:location.href,alias:"$root",value : window};
+        let basUrl:string = location.protocol + "://" + location.hostname +":" + location.port + "/" ;
+        let paths = location.pathname.replace(/\/$/,"").split("/");
+        paths.pop();
+        basUrl += paths.join("/") + "/";
+        rootOpts.basUrl= basUrl;
+        
+        let parseModOpts:(elem:HTMLElement)=>ModuleOpts =(elem:HTMLElement):ModuleOpts =>{
+            let url = (elem as HTMLScriptElement).src || (elem as HTMLLinkElement).href;
+            if(!url)return;
+            let result:ModuleOpts = {};
+            let alias = elem.getAttribute("y-alias");
+            let valName:any = elem.getAttribute("y-module-value");
+            if(valName){
+                eval("valName=" + valName);
+            }else valName = NONE;
+            result.url = url;
+            result.alias = alias || url;
+            result.expiry =-1;
+            result.value = valName;
+            return result;
+        };
+        let bootPageUrl :string;
+        let bootArea:string;
+        let bootAlias:string;
+        let defineScript :HTMLScriptElement;
+        let scripts = document.getElementsByTagName("script");
+        for(let i=0,j=scripts.length;i<j;i++){
+            let script = scripts[i];
+            let opts:ModuleOpts = parseModOpts(script);
+            if(opts) Module.cache[opts.alias] = Module.cache[opts.url] = new Module(opts);
+            let url = script.getAttribute("y-boot-page");
+            if(url){
+                bootPageUrl = url;
+                let area = script.getAttribute("y-boot-area");
+                if(area) bootArea = area;
+                bootAlias = script.getAttribute("y-boot-alias");
+            } 
+            let defineAttr = script.getAttribute("y-module-define");
+            if(defineAttr!==undefined && defineAttr!==null) defineScript = script; 
+        }
+        let links = document.getElementsByTagName("link");
+        for(let i=0,j=links.length;i<j;i++){
+            let opts:ModuleOpts = parseModOpts(links[i]);
+            if(opts)Module.cache[opts.alias] = Module.cache[opts.url] = new Module(opts);
+        }
+        Module.root = new Module(rootOpts);
+        if(bootPageUrl) Module.root.load({
+            url:bootPageUrl,
+            alias:bootAlias,
+            type :ModuleTypes.page
+        });
+    });
 
     
     //export let module = Module.define; 
@@ -2091,12 +2260,11 @@ export namespace Y {
     export interface IControlOpts{
         url:string;
         area:HTMLElement|string;
-        callback?:ILoadCallback;
     }
 
     export function controll(opts:IControlOpts){
         let area:HTMLElement = (opts.area)?platform.getElement(opts.area):null;
-        Module.load(opts.url).done((module:Module)=>{
+        Module.root.load(opts.url).done((module:Module)=>{
             let proto = module.value;
             if(module.value===undefined){
                 if(area && (module).element) {
@@ -2127,29 +2295,16 @@ export namespace Y {
             }
             controller.view = view;
             controller.model = view.model.$accessor;
-            let remotes :{[index:string]:ISourceOpts|string} = module.data["controller.data"] as {[index:string]:ISourceOpts|string};
+            let remotes :{[index:string]:ModuleOpts|string} = module.data["controller.data"] as {[index:string]:ModuleOpts|string};
             if(remotes){
 
             }
             controller.load(controller.model,controller.view);    
-            if(opts.callback) opts.callback.call(this,controller);    
+            //if(opts.callback) opts.callback.call(this,controller);    
         });
     }
     
-    platform.attach(window,"load",function(){
-       let scripts = document.getElementsByTagName("script");
-       for(let i=0,j=scripts.length;i<j;i++){
-            var booturl = scripts[i].getAttribute("y-boot-url");
-            
-            if(booturl){
-                var elemId = scripts[i].getAttribute("y-boot-area");
-                Y.controll({
-                    url:booturl,
-                    area: document.getElementById(elemId)
-                });
-            }
-       }     
-    });
+    
 
     
     let _seed = 0;

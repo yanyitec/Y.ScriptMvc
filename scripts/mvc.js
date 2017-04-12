@@ -7,14 +7,366 @@ var __extends = (this && this.__extends) || function (d, b) {
 var Y;
 (function (Y) {
     "use strict";
-    var SourceTypes;
-    (function (SourceTypes) {
-        SourceTypes[SourceTypes["script"] = 0] = "script";
-        SourceTypes[SourceTypes["css"] = 1] = "css";
-        SourceTypes[SourceTypes["json"] = 2] = "json";
-        SourceTypes[SourceTypes["text"] = 3] = "text";
-        SourceTypes[SourceTypes["image"] = 4] = "image";
-    })(SourceTypes = Y.SourceTypes || (Y.SourceTypes = {}));
+    ////////////////////////////////////
+    /// 通用机制
+    ///////////////////////////////////
+    Y.NONE = { toString: function () { return "{object y-none}"; } };
+    Y.BREAK = { toString: function () { return "{object y-break}"; } };
+    Y.USEAPPLY = { toString: function () { return "{object y-useApply}"; } };
+    Y.debugMode = true;
+    //观察者模式基类
+    var Observable = (function () {
+        function Observable() {
+        }
+        Observable.prototype.subscribe = function (event, handler) {
+            var subscribers;
+            if (handler === undefined) {
+                handler = event;
+                subscribers = this.__y_observable_default_subscribers || (this.__y_observable_default_subscribers = []);
+            }
+            else {
+                var sets = this.__y_observable_subscriberset || (this.__y_observable_subscriberset = {});
+                subscribers = sets[event] || (sets[event] = []);
+            }
+            subscribers.push(handler);
+            return this;
+        };
+        Observable.prototype.unsubscribe = function (event, handler) {
+            var subscribers;
+            if (handler === undefined) {
+                handler = event;
+                subscribers = this.__y_observable_default_subscribers;
+            }
+            else {
+                subscribers = this.__y_observable_subscriberset ? this.__y_observable_subscriberset[event] : null;
+            }
+            if (!subscribers)
+                return this;
+            for (var i = 0, j = subscribers.length; i < j; i++) {
+                var exist = subscribers.shift();
+                if (exist !== handler)
+                    subscribers.push(exist);
+            }
+            return this;
+        };
+        Observable.prototype.notify = function (event, args) {
+            var subscribers;
+            if (args === undefined) {
+                args = event;
+                subscribers = this.__y_observable_default_subscribers;
+            }
+            else {
+                subscribers = this.__y_observable_subscriberset ? this.__y_observable_subscriberset[event] : null;
+            }
+            if (!subscribers)
+                return this;
+            var isArr = isArray(args);
+            for (var i = 0, j = subscribers.length; i < j; i++) {
+                if (subscribers[i].call(this, args) === Y.BREAK)
+                    break;
+            }
+            return this;
+        };
+        Observable.prototype.applyNotify = function (event, args) {
+            var subscribers;
+            if (args === undefined) {
+                args = event;
+                subscribers = this.__y_observable_default_subscribers;
+            }
+            else {
+                subscribers = this.__y_observable_subscriberset ? this.__y_observable_subscriberset[event] : null;
+            }
+            if (!subscribers)
+                return this;
+            var isArr = isArray(args);
+            for (var i = 0, j = subscribers.length; i < j; i++) {
+                if (subscribers[i].apply(this, args) === Y.BREAK)
+                    break;
+            }
+            return this;
+        };
+        return Observable;
+    }());
+    Y.Observable = Observable;
+    var PromiseResult = (function () {
+        function PromiseResult(fullfilled, value, args) {
+            if (this.useApply = args === Y.USEAPPLY) {
+                this.args = value;
+                this.value = value[0];
+            }
+            else {
+                this.value = value;
+                this.args = args;
+            }
+            this.isFullfilled = fullfilled;
+        }
+        PromiseResult.prototype.isRejected = function (me, reject) {
+            if (!this.isFullfilled) {
+                if (reject) {
+                    if (this.useApply)
+                        reject.apply(me, this.args);
+                    else
+                        reject.call(me, this.value, this.args);
+                }
+                return true;
+            }
+            return false;
+        };
+        PromiseResult.prototype.isResolved = function (me, resolve) {
+            if (this.isFullfilled) {
+                if (resolve) {
+                    if (this.useApply)
+                        resolve.apply(me, this.args);
+                    else
+                        resolve.call(me, this.value, this.args);
+                }
+                return true;
+            }
+            return false;
+        };
+        return PromiseResult;
+    }());
+    Y.PromiseResult = PromiseResult;
+    var Promise = (function () {
+        function Promise(statement, param) {
+            var me = this;
+            var resolve = function (value, value1) {
+                if (value === me) {
+                    var ex = new TypeError("cannot use self promise as fullfilled value.");
+                    Y.logger.warn(ex, "y/Promise.resolve");
+                }
+                var vt = typeof value;
+                if (vt === "function") {
+                    try {
+                        value.call(me, resolve, reject, param);
+                    }
+                    catch (ex) {
+                        Y.logger.error(ex, "y/Module.resolve");
+                        this.__y_promise_fullfill(false, ex);
+                    }
+                }
+                else if (vt === "object" && value.then) {
+                    value.then(function (v1, v2) { arguments.length <= 2 ? me.__y_promise_fullfill(true, v1, v2) : me.__y_promise_fullfill(true, toArray(arguments), Y.USEAPPLY); }, function (v1, v2) { arguments.length <= 2 ? me.__y_promise_fullfill(false, v1, v2) : me.__y_promise_fullfill(false, toArray(arguments), Y.USEAPPLY); });
+                }
+                else {
+                    arguments.length <= 2 ? me.__y_promise_fullfill(true, value, value1) : me.__y_promise_fullfill(true, toArray(arguments), Y.USEAPPLY);
+                }
+            };
+            var reject = function (v1, v2) { arguments.length <= 2 ? me.__y_promise_fullfill(false, v1, v2) : me.__y_promise_fullfill(false, toArray(arguments), Y.USEAPPLY); };
+            if (typeof statement !== "function") {
+                resolve.call(this, statement);
+            }
+            if (statement === undefined) {
+                this.resolve = resolve;
+                this.reject = reject;
+            }
+            else {
+                if (typeof statement === "function") {
+                    try {
+                        statement.call(me, resolve, reject, param);
+                    }
+                    catch (ex) {
+                        Y.logger.error(ex, "y/Promise.constructor");
+                        me.__y_promise_fullfill(false, ex);
+                    }
+                }
+                else {
+                    resolve.call(this, statement === Y.NONE ? undefined : statement);
+                }
+            }
+        }
+        Promise.prototype.__y_promise_fullfill = function (isFullfilled, value, value1) {
+            var _this = this;
+            if (typeof isFullfilled !== "boolean") {
+                this.__y_promise_result = isFullfilled;
+                return;
+            }
+            var handlers = isFullfilled ? this.__y_promise_resolves : this.__y_promise_rejects;
+            var result = this.__y_promise_result = new PromiseResult(isFullfilled, value, value1);
+            this.__y_promise_rejects = undefined;
+            this.__y_promise_resolves = undefined;
+            this.resolve = this.reject = undefined;
+            if (handlers) {
+                Y.platform.async(function () {
+                    if (result.useApply)
+                        for (var i = 0, j = handlers.length; i < j; i++)
+                            handlers[i].apply(_this, result.args);
+                    else
+                        for (var i = 0, j = handlers.length; i < j; i++)
+                            handlers[i].call(_this, result.value, result.args);
+                });
+            }
+        };
+        Promise.prototype.then = function (resolve, reject, ck) {
+            if (resolve === true || resolve === false)
+                return this.fail(reject, resolve);
+            if (reject === true || reject === false)
+                return this.done(resolve, reject);
+            return this.done(resolve, ck).fail(reject, ck);
+        };
+        Promise.prototype.done = function (handle, ck) {
+            if (typeof handle !== "function")
+                return this;
+            var result = this.__y_promise_result;
+            if (result) {
+                result.isResolved(this, handle);
+            }
+            else {
+                var handlers = this.__y_promise_resolves || (this.__y_promise_resolves = []);
+                if (!ck || handlers.length == 0)
+                    handlers.push(handle);
+                else {
+                    for (var i = 0, j = handlers.length; i < j; i++)
+                        if (handlers[i] === handle)
+                            return;
+                    handlers.push(handle);
+                }
+            }
+            return this;
+        };
+        Promise.prototype.fail = function (handle, ck) {
+            if (typeof handle !== "function")
+                return this;
+            var result = this.__y_promise_result;
+            if (result) {
+                result.isRejected(this, handle);
+            }
+            else {
+                var handlers = this.__y_promise_rejects || (this.__y_promise_rejects = []);
+                if (!ck || handlers.length == 0)
+                    handlers.push(handle);
+                else {
+                    for (var i = 0, j = handlers.length; i < j; i++)
+                        if (handlers[i] === handle)
+                            return;
+                    handlers.push(handle);
+                }
+            }
+            return this;
+        };
+        Promise.prototype.complete = function (handle, ck) {
+            var _this = this;
+            if (typeof handle !== "function")
+                return this;
+            var callback = function () { return handle.call(_this, _this.__y_promise_result); };
+            return this.then(callback, callback, ck);
+        };
+        Promise.prototype.promise = function (promise) {
+            var result = new Promise();
+            var resolve = result.resolve, reject = result.reject;
+            result.resolve = result.reject = undefined;
+            this.then(function () {
+                var _this = this;
+                Y.platform.async(function () { return promise.call(result, resolve, reject, _this.__y_promise_result); });
+            }, function () { result.__y_promise_fullfill(this.__y_promise_result); });
+            return result;
+        };
+        //Usage:
+        //1 when([m1,m2],(m)=>new Promise(m)) 第一个参数是数组
+        // 2 when(promise1,promiseFun2,IThenable)
+        Promise.when = function (deps, promiseMaker, arg2, arg3, arg4, arg5) {
+            if (isArray(deps)) {
+                //处理第一种用法
+                return new Promise(function (resolve, reject) {
+                    //let [deps,promiseMaker] = args;
+                    var result = [];
+                    var taskCount = deps.length;
+                    var hasError;
+                    var _loop_1 = function (i, j) {
+                        var dep = deps[i];
+                        if (typeof dep === "function")
+                            dep = new Promise(dep);
+                        else if (!dep || !dep.then) {
+                            if (!promiseMaker)
+                                throw new Error("promise make located at arguments[1] is required.");
+                            dep = promiseMaker(dep);
+                        }
+                        if (!dep)
+                            throw new Error("Cannot make " + deps[i] + " as Promise.");
+                        dep.then(function (value) {
+                            if (hasError)
+                                return;
+                            result[i] = value;
+                            if (--taskCount == 0)
+                                resolve(result);
+                        }, function (err) {
+                            hasError = err;
+                            reject(err);
+                        });
+                    };
+                    for (var i = 0, j = taskCount; i < j; i++) {
+                        _loop_1(i, j);
+                    }
+                });
+            }
+            else {
+                return Promise.when(toArray(arguments));
+            }
+        };
+        return Promise;
+    }());
+    Promise.placehold = new Promise(Y.NONE);
+    Y.Promise = Promise;
+    var LogLevels;
+    (function (LogLevels) {
+        LogLevels[LogLevels["error"] = 0] = "error";
+        LogLevels[LogLevels["warning"] = 1] = "warning";
+        LogLevels[LogLevels["notice"] = 2] = "notice";
+        LogLevels[LogLevels["info"] = 3] = "info";
+        LogLevels[LogLevels["debug"] = 4] = "debug";
+    })(LogLevels = Y.LogLevels || (Y.LogLevels = {}));
+    var Log = (function () {
+        function Log(message, path, lv) {
+            if (path === void 0) { path = ""; }
+            if (lv === void 0) { lv = LogLevels.info; }
+            this.path = path;
+            this.level = lv;
+            this.time = new Date();
+            if (Y.debugMode) {
+                if (message instanceof Error) {
+                    var err = message;
+                    if (!err.stack) {
+                        try {
+                            throw err;
+                        }
+                        catch (ex) {
+                            message = ex;
+                        }
+                    }
+                }
+            }
+            this.message = message;
+        }
+        Log.prototype.toString = function () {
+            var lv = this.level === undefined ? LogLevels[LogLevels.info] : (typeof this.level === "string" ? this.level : LogLevels[this.level]);
+            return "[" + lv + ":" + (this.path || "") + "]" + this.message;
+        };
+        Log.error = function (message, path) {
+            console.error(new Log(message, path, LogLevels.error));
+        };
+        Log.warn = function (message, path) {
+            console.warn(new Log(message, path, LogLevels.warning));
+        };
+        Log.notice = function (message, path) {
+            console.log(new Log(message, path, LogLevels.notice));
+        };
+        Log.info = function (message, path) {
+            console.info(new Log(message, path, LogLevels.info));
+        };
+        Log.debug = function (message, path) {
+            if (Y.debugMode)
+                console.debug(new Log(message, path, LogLevels.debug));
+        };
+        return Log;
+    }());
+    Y.Log = Log;
+    Y.logger = {
+        error: Log.error,
+        warn: Log.warn,
+        notice: Log.notice,
+        info: Log.info,
+        debug: Log.debug
+    };
     ////////////////////////////////////
     /// 平台抽象
     ///////////////////////////////////
@@ -23,13 +375,12 @@ var Y;
         function Platform() {
             this.attach = window["attachEvent"] ? function (elem, evtname, fn) { elem.attachEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.addEventListener(evtname, fn, false); };
             this.detech = window["detechEvent"] ? function (elem, evtname, fn) { elem.detechEvent("on" + evtname, fn); } : function (elem, evtname, fn) { elem.removeEventListener(evtname, fn, false); };
+            this.async = window["setImmediate"] ? function (handler) { return setImmediate(handler); } : function (handler) { return setTimeout(handler, 0); };
         }
         Platform.prototype.attach = function (elem, evtName, evtHandler) { };
         //解除事件
         Platform.prototype.detech = function (elem, evtName, evtHandler) { };
-        Platform.prototype.alert = function (message) {
-            window.alert(message);
-        };
+        Platform.prototype.async = function (handler) { return 0; };
         Platform.prototype.cloneNode = function (elem) {
             var tag = elem.tagName;
             if (elem.cloneNode)
@@ -52,6 +403,9 @@ var Y;
             var html = elem.outerHTML + "";
             ctn.innerHTML = html;
             return ctn.firstChild;
+        };
+        Platform.prototype.createElement = function (tagName) {
+            return document.createElement(tagName);
         };
         Platform.prototype.getElement = function (selector, context) {
             if (typeof selector === "string") {
@@ -76,81 +430,81 @@ var Y;
                 return selector;
         };
         //获取内容
-        Platform.prototype.getContent = function (url, callback) {
-            this.ajax({
+        Platform.prototype.getStatic = function (url) {
+            return this.ajax({
                 url: url,
-                method: "GET",
-                callback: callback
+                method: "GET"
             });
         };
         Platform.prototype.ajax = function (opts) {
-            var http = null;
-            if (window["XMLHttpRequest"]) {
-                http = new XMLHttpRequest();
-                if (http.overrideMimeType)
-                    http.overrideMimeType("text/xml");
-            }
-            else if (window["ActiveXObject"]) {
-                var activeName = ["MSXML2.XMLHTTP", "Microsoft.XMLHTTP"];
-                for (var i = 0; i < activeName.length; i++)
-                    try {
-                        http = new ActiveXObject(activeName[i]);
-                        break;
-                    }
-                    catch (e) { }
-            }
-            if (http == null)
-                throw "Cannot create XmlHttpRequest Object";
-            var url = opts.url;
-            if (!url)
-                throw "require url";
-            var method = opts.method ? opts.method.toUpperCase() : "GET";
-            var data = opts.data;
-            if (typeof data === 'object') {
-                var content = "";
-                for (var n in data) {
-                    content += encodeURIComponent(n) + "=" + encodeURIComponent(data[n]) + "&";
+            return new Promise(function (resolve, reject) {
+                var http = null;
+                if (window["XMLHttpRequest"]) {
+                    http = new XMLHttpRequest();
+                    if (http.overrideMimeType)
+                        http.overrideMimeType("text/xml");
                 }
-                data = content;
-            }
-            if (method == "POST") {
-                http.setRequestHeader("Content-type", "application/x-www-four-urlencoded");
-            }
-            else if (method == "GET") {
-                if (url.indexOf("?")) {
-                    if (data)
-                        url += "&" + data;
+                else if (window["ActiveXObject"]) {
+                    var activeName = ["MSXML2.XMLHTTP", "Microsoft.XMLHTTP"];
+                    for (var i = 0; i < activeName.length; i++)
+                        try {
+                            http = new ActiveXObject(activeName[i]);
+                            break;
+                        }
+                        catch (e) { }
                 }
-                else if (data)
-                    url += "?" + data;
-                data = null;
-            }
-            var headers = opts.headers;
-            if (headers)
-                for (var n_1 in headers)
-                    http.setRequestHeader(n_1, headers[n_1]);
-            var httpRequest = http;
-            function callback() {
-                if (httpRequest.readyState == 4 && opts.callback) {
-                    var result = void 0;
-                    if (opts.dataType == "json") {
-                        result = JSON.parse(httpRequest.responseText);
+                if (http == null)
+                    throw "Cannot create XmlHttpRequest Object";
+                var url = opts.url;
+                if (!url)
+                    throw "require url";
+                var method = opts.method ? opts.method.toUpperCase() : "GET";
+                var data = opts.data;
+                if (typeof data === 'object') {
+                    var content = "";
+                    for (var n in data) {
+                        content += encodeURIComponent(n) + "=" + encodeURIComponent(data[n]) + "&";
                     }
-                    else if (opts.dataType == "xml") {
-                        result = httpRequest.responseXML;
-                    }
-                    else
-                        result = httpRequest.responseText;
-                    opts.callback.call(http, result);
+                    data = content;
                 }
-            }
-            httpRequest.onreadystatechange = callback;
-            if (opts.callback)
-                httpRequest.onerror = function (err) {
-                    opts.callback.call(httpRequest, err);
+                if (method == "POST") {
+                    http.setRequestHeader("Content-type", "application/x-www-four-urlencoded");
+                }
+                else if (method == "GET") {
+                    if (url.indexOf("?")) {
+                        if (data)
+                            url += "&" + data;
+                    }
+                    else if (data)
+                        url += "?" + data;
+                    data = null;
+                }
+                var headers = opts.headers;
+                if (headers)
+                    for (var n_1 in headers)
+                        http.setRequestHeader(n_1, headers[n_1]);
+                var httpRequest = http;
+                httpRequest.onreadystatechange = function () {
+                    if (httpRequest.readyState == 4) {
+                        var result = void 0;
+                        if (opts.dataType == "json") {
+                            result = JSON.parse(httpRequest.responseText);
+                        }
+                        else if (opts.dataType == "xml") {
+                            result = httpRequest.responseXML;
+                        }
+                        else
+                            result = httpRequest.responseText;
+                        resolve(result, http);
+                    }
                 };
-            httpRequest.open(method, url, true);
-            httpRequest.send(data);
+                httpRequest.onerror = function (err) {
+                    Y.logger.error(err, "y/ajax");
+                    reject(err, httpRequest);
+                };
+                httpRequest.open(method, url, true);
+                httpRequest.send(data);
+            });
         }; //end ajax
         return Platform;
     }());
@@ -160,10 +514,16 @@ var Y;
     function isArray(o) {
         if (!o)
             return false;
-        return o2Str.call(o) == "[Object Array]";
+        return o2Str.call(o) == "[object Array]";
     }
     Y.isArray = isArray;
-    window["exports"] = {};
+    var aslice = Array.prototype.slice;
+    function toArray(o) {
+        if (!o)
+            return [];
+        return aslice.call(o);
+    }
+    Y.toArray = toArray;
     ////////////////////////////////////
     /// 多语言化
     ////////////////////////////////////
@@ -174,404 +534,150 @@ var Y;
     }
     Y.language = language;
     ////////////////////////////////////
-    /// 资源加载
-    ////////////////////////////////////
-    var head;
-    var _exports;
-    var Source = (function () {
-        function Source(opts, callback) {
-            var _opts;
-            if (typeof opts === "string") {
-                _opts = { url: opts, alias: opts, type: undefined, callback: callback };
-                var url = opts;
-                if (url.lastIndexOf(".js"))
-                    _opts.type = SourceTypes.script;
-                else if (url.lastIndexOf(".css"))
-                    _opts.type = SourceTypes.css;
-                else if (url.lastIndexOf(".json"))
-                    _opts.type = SourceTypes.json;
-            }
-            this.url = _opts.url;
-            this.type = _opts.type;
-            this.alias = _opts.alias || this.url;
-            this.extras = _opts.extras;
-            if (callback)
-                this.callback(callback);
-            if (_opts.callback)
-                this.callback(_opts.callback);
-            if (_opts.value !== undefined) {
-                this.value = _opts.value;
-                this._done(this.value, undefined);
-            }
-            else {
-                this._callbacks = [];
-                this.refresh();
-            }
-        }
-        Source.prototype.callback = function (handle) {
-            if (this._callbacks === undefined) {
-                handle.call(this, this.value, this.error);
-            }
-            else
-                this._callbacks.push(handle);
-            return this;
-        };
-        Source.prototype._done = function (success, error) {
-            this.value = success;
-            this.error = error;
-            for (var i = 0, j = this._callbacks.length; i < j; i++) {
-                var item = this._callbacks[i];
-                item.call(this, success, error);
-            }
-            _exports = undefined;
-            this._callbacks = undefined;
-        };
-        Source.prototype.refresh = function () {
-            if (!this.url)
-                return this;
-            var me = this;
-            if (this.type == SourceTypes.json) {
-                Y.platform.getContent(this.url, function (content, error) {
-                    if (!error)
-                        me._done(JSON.parse(content), error);
-                    else
-                        me._done(undefined, error);
-                });
-                return me;
-            }
-            if (this.type != SourceTypes.css && this.type != SourceTypes.script) {
-                Y.platform.getContent(this.url, function (content, error) {
-                    me._done(content, error);
-                });
-                return me;
-            }
-            if (this.element)
-                this.element.parentNode.removeChild(this.element);
-            var elem;
-            if (this.type == SourceTypes.script) {
-                elem = document.createElement("script");
-                elem.src = this.url;
-                elem.type = "text/javascript";
-            }
-            else if (this.type == SourceTypes.css) {
-                elem = document.createElement("link");
-                elem.href = this.url;
-                elem.type = "text/css";
-                elem.rel = "stylesheet";
-            }
-            if (elem["onreadystatechange"] !== undefined) {
-                elem.onreadystatechange = function () {
-                    if (elem.readyState == 4 || elem.readyState == "complete") {
-                    }
-                };
-            }
-            else
-                elem.onload = function () {
-                    for (var i = 0, j = me._callbacks.length; i < j; i++) {
-                        var item = me._callbacks[i];
-                        item.call(me, _exports, me.error);
-                    }
-                    _exports = undefined;
-                    me._callbacks = undefined;
-                };
-            elem.onerror = function (ex) {
-                _exports = undefined;
-                me._callbacks = undefined;
-                elem.parentNode.removeChild(elem);
-                for (var i = 0, j = me._callbacks.length; i < j; i++) {
-                    var item = me._callbacks[i];
-                    item.call(me, _exports, me.error);
-                }
-            };
-            var myhead = head;
-            if (myhead == null) {
-                var heads = document.getElementsByTagName("head");
-                if (heads && heads.length) {
-                    head = myhead = heads[0];
-                }
-                else {
-                    myhead = document.body;
-                }
-            }
-            this.element = elem;
-            myhead.appendChild(elem);
-            return this;
-        };
-        Source.prototype.dispose = function () {
-        };
-        Source.load = function (opts, callback) {
-            var isUrl = typeof opts === "string";
-            var name = isUrl ? opts : (opts.alias || opts.url);
-            if (isUrl) {
-                name = opts;
-            }
-            else {
-                var _opts = opts;
-                if (_opts.nocache === true)
-                    return new Source(opts, callback);
-                name = (_opts.alias || _opts.url);
-            }
-            var source = Source.cache[name];
-            if (!source) {
-                source = new Source(opts, callback);
-                if (source.url) {
-                    Source.cache[source.url] = source;
-                }
-                if (source.alias) {
-                    Source.cache[source.alias] = source;
-                }
-            }
-            else if (callback)
-                source.callback(callback);
-            return source;
-        };
-        Source.loadMany = function (opts, nocache, callback) {
-            var _this = this;
-            var result = {};
-            if (typeof nocache === "function") {
-                callback = nocache;
-                nocache = false;
-            }
-            var waitingCount = 1;
-            var hasError;
-            for (var n in opts) {
-                if (hasError)
-                    break;
-                var srcOpts = opts[n];
-                if (typeof srcOpts === "string")
-                    srcOpts = { url: srcOpts, nocache: nocache, extras: n };
-                Source.load(srcOpts, function (value, error) {
-                    if (hasError)
-                        return;
-                    if (error) {
-                        hasError = error;
-                        return;
-                    }
-                    var src = _this;
-                    result[src.extras] = src;
-                    if (--waitingCount == 0 && callback)
-                        callback(result, undefined);
-                });
-            }
-            if (--waitingCount == 0 && callback)
-                callback(result, undefined);
-            return result;
-        };
-        return Source;
-    }());
-    Source.cache = {};
-    Y.Source = Source;
-    ////////////////////////////////////
     /// 模块化
     ////////////////////////////////////
-    var Module = (function () {
-        function Module(idOrOpts, callback) {
-            var opts;
-            if (typeof idOrOpts === "string") {
-                this.id = idOrOpts.toString();
+    var ControlOpts = (function () {
+        function ControlOpts() {
+        }
+        return ControlOpts;
+    }());
+    var ModuleParameter = (function () {
+        function ModuleParameter() {
+        }
+        return ModuleParameter;
+    }());
+    var ModuleTypes;
+    (function (ModuleTypes) {
+        ModuleTypes[ModuleTypes["none"] = 0] = "none";
+        ModuleTypes[ModuleTypes["script"] = 1] = "script";
+        ModuleTypes[ModuleTypes["css"] = 2] = "css";
+        ModuleTypes[ModuleTypes["json"] = 3] = "json";
+        ModuleTypes[ModuleTypes["text"] = 4] = "text";
+        ModuleTypes[ModuleTypes["image"] = 5] = "image";
+        ModuleTypes[ModuleTypes["page"] = 6] = "page";
+    })(ModuleTypes = Y.ModuleTypes || (Y.ModuleTypes = {}));
+    var ModuleOpts = (function () {
+        function ModuleOpts() {
+        }
+        return ModuleOpts;
+    }());
+    Y.ModuleOpts = ModuleOpts;
+    var Module = (function (_super) {
+        __extends(Module, _super);
+        function Module(opts, container) {
+            var _this = _super.call(this) || this;
+            var me = _this;
+            _this.container = container;
+            _this.alias = opts.alias || opts.url;
+            _this.url = opts.url;
+            _this.basUrl = opts.basUrl;
+            _this.ref_count = 0;
+            _this._disposing = [];
+            _this.data = opts.data || {};
+            _this.type = opts.type || Module.getResType(opts.url) || ModuleTypes.none;
+            _this.expiry = opts.expiry;
+            _this.activeTime = new Date();
+            _this.element = opts.element;
+            _this.value = opts.value;
+            if (_this.type === ModuleTypes.none) {
+                _this.resolve();
+                return _this;
             }
-            else {
-                opts = idOrOpts;
-                this.id = opts.id;
+            if (_this.value !== undefined || _this.value === Y.NONE) {
+                _this.resolve(_this.value);
+                return _this;
             }
-            this.ref_count = 0;
-            this._disposing = [];
-            this._callbacks = [];
-            if (opts)
-                this.data = opts.data;
-            if (!this.data)
-                this.data = {};
-            this.activeTime = new Date();
-            if (this.id) {
-                Module.cache[this.id] = this;
+            if (opts.expiry != -1) {
                 if (!Module.clearTimer)
                     Module.clearTimer = setInterval(Module.clearExpired, Module.clearInterval || 60000);
             }
-            if (callback)
-                this.callback(callback);
-            if (opts)
-                this._init(opts);
-            else
-                this._getOptsAndInit(idOrOpts.toString());
-        }
-        Module.prototype._getOptsAndInit = function (url) {
-            var me = this;
-            Y.platform.getContent(url, function (html, error) {
-                var elem = document.createElement("div");
-                html = html.replace("<!DOCTYPE html>", "")
-                    .replace(/<html\s/i, "<div ")
-                    .replace(/<\/html>/i, "<div ")
-                    .replace(/<head\s/i, "<div class='y-head' ")
-                    .replace(/<\/head>/i, "</div>")
-                    .replace(/<body\s/i, "<div class='y-body' ")
-                    .replace(/<\/body>/i, "</div>");
-                elem.innerHTML = html;
-                var deps = [];
-                var scripts = elem.getElementsByTagName("script");
-                var script;
-                var links = elem.getElementsByTagName("link");
-                for (var i = 0, j = scripts.length; i < j; i++) {
-                    var sElem = scripts[i];
-                    var src = sElem.getAttribute("src");
-                    var isModule = sElem.getAttribute("y-module");
-                    if (isModule) {
-                        script = sElem;
-                        sElem.parentNode.removeChild(sElem);
-                    }
-                    if (!src)
-                        continue;
-                    var alias = script.getAttribute("y-alias");
-                    var scriptOpts = {
-                        url: src,
-                        alias: alias || src,
-                        type: SourceTypes.script
-                    };
-                    deps.push(scriptOpts);
-                    sElem.parentNode.removeChild(sElem);
-                }
-                for (var i = 0, j = links.length; i < j; i++) {
-                    var sElem = links[i];
-                    var src = sElem.getAttribute("href");
-                    if (!src)
-                        continue;
-                    var alias = script.getAttribute("y-alias");
-                    var cssOpts = {
-                        url: src,
-                        alias: alias || src,
-                        type: SourceTypes.css
-                    };
-                    deps.push(cssOpts);
-                    sElem.parentNode.removeChild(sElem);
-                }
-                var moOpts = {
-                    template: elem,
-                    deps: deps
-                };
-                if (script === undefined) {
-                    return me._init(moOpts);
-                }
-                if (script.src) {
-                    new Source({ url: script.src, type: SourceTypes.script }, function (scriptElem, error) {
-                        if (error) {
-                            me.error = error;
-                            me._done();
-                            return;
-                        }
-                        moOpts = this._combineModuleOpts(moOpts);
-                        me._init(moOpts);
-                    });
-                }
-                else {
-                    var code = "(function(){" + script.innerHTML + "})();";
-                    try {
-                        eval(code);
-                    }
-                    catch (ex) {
-                        me.error = ex;
-                        return me._done();
-                    }
-                    moOpts = this.combineModuleOpts(moOpts);
-                    me._init(moOpts);
-                }
-            });
-        };
-        Module.prototype._combineModuleOpts = function (dest, src) {
-            src || (src = Module.exportModuleOpts);
-            if (!src) {
-                this.error = "未定义module";
-                return this._done();
+            var _a = _this, resolve = _a.resolve, reject = _a.reject;
+            _this.reject = _this.reject = undefined;
+            if (_this.url) {
+                Module.loadRes(_this.url, _this.type).then(function (newOpts) {
+                    _this._combineModuleOpts(opts, newOpts);
+                    _this._init(opts, resolve, reject);
+                }, function (err) { return reject(err); });
             }
             else {
-                Module.exportModuleOpts = undefined;
+                _this._init(opts, resolve, reject);
             }
+            return _this;
+        }
+        Module.getResType = function (url) {
+            if (!url)
+                return;
+            if (/.js$/i.test(url))
+                return ModuleTypes.script;
+            if (/.css$/i.test(url))
+                return ModuleTypes.css;
+            if (/.json$/i.test(url))
+                return ModuleTypes.json;
+            if (/(?:.html$)|(?:.htm$)/i.test(url))
+                return ModuleTypes.page;
+            if (/(?:.jpg$)|(?:.png$)|(?:.bmp$)|(?:.gif$)/i.test(url))
+                return ModuleTypes.image;
+            return undefined;
+        };
+        Module.prototype._combineModuleOpts = function (dest, src) {
+            if (!src) {
+                return dest;
+            }
+            dest.expiry = dest.expiry;
             dest.define = src.define;
             dest.lang = src.lang;
             dest.data = src.data;
-            var _deps = src.deps;
+            var _deps = src.shares;
             if (_deps) {
-                if (!dest.deps)
-                    dest.deps = [];
+                if (!dest.shares)
+                    dest.shares = [];
                 for (var i = 0, j = _deps.length; i < j; i++) {
-                    dest.deps.push(_deps[i]);
+                    dest.shares.push(_deps[i]);
                 }
             }
-            dest.imports = src.imports;
+            _deps = src.scopes;
+            if (_deps) {
+                if (!dest.scopes)
+                    dest.scopes = [];
+                for (var i = 0, j = _deps.length; i < j; i++) {
+                    dest.scopes.push(_deps[i]);
+                }
+            }
+            if (src.imports)
+                dest.imports = src.imports;
+            dest.element = src.element;
             return dest;
         };
-        Module.prototype._init = function (opts) {
+        Module.prototype._init = function (opts, resolve, reject) {
+            var _this = this;
             var me = this;
-            this.defineProc = opts.define;
-            this.viewTemplate = opts.template;
-            var depScripts = [];
-            var waitingCount = 1;
-            var deps = opts.deps;
-            if (deps) {
+            this.element = opts.element;
+            var langUrl = opts.lang ? opts.lang.replace("{language}", langId) : null;
+            var defineUrl = typeof opts.define == "string" ? opts.define : null;
+            var add_ref = function (deps) {
+                if (!deps)
+                    return;
                 for (var i = 0, j = deps.length; i < j; i++) {
-                    if (this.error)
-                        return;
-                    waitingCount++;
                     var dep = deps[i];
-                    Source.load(dep, function (value, err) {
-                        if (err) {
-                            me.error = err;
-                            return;
-                        }
-                        if (me.error || (--waitingCount == 0))
-                            me._done();
-                    });
+                    if (dep) {
+                        dep.ref_count++;
+                    }
                 }
-            }
-            var args = [];
-            deps = opts.imports;
-            if (deps) {
-                for (var i = 0, j = deps.length; i < j; i++) {
-                    if (this.error)
-                        return;
-                    waitingCount++;
-                    var dep = deps[i];
-                    Source.load(dep, function (value, err) {
-                        if (err) {
-                            me.error = err;
-                            return;
-                        }
-                        if (me.error || (--waitingCount == 0))
-                            me._done();
-                        args.push(value);
-                    });
-                }
-            }
-            if (opts.lang) {
-                var url = opts.lang.replace("{language}", langId);
-                waitingCount++;
-                new Source(url, function (value, error) {
-                    me.texts = value;
-                    if (me.error || (--waitingCount == 0))
-                        me._done();
-                });
-            }
-            this.imports = args;
-            if (me.error || (--waitingCount == 0))
-                me._done();
+            };
+            var tasks = [];
+            Promise.when(langUrl ? this.load(langUrl) : Promise.placehold, defineUrl ? this.load(defineUrl) : Promise.placehold, opts.imports ? this.loadMany(opts.imports) : Promise.placehold, opts.scopes ? this.loadMany(opts.scopes) : Promise.placehold, opts.shares ? this.loadMany(opts.shares) : Promise.placehold).done(function (result) {
+                var langPack = result[0], define = result[1], imports = result[2], scopes = result[3], globals = result[4];
+                add_ref(_this.shares = globals);
+                add_ref(_this.scopes = scopes);
+                add_ref(_this.imports = imports);
+                _this._finish(_this.value, resolve);
+            }).fail(function (err) {
+                reject(err);
+            });
         };
-        Module.prototype.callback = function (handle) {
-            if (!handle)
-                return this;
-            if (this._callbacks === undefined) {
-                handle.call(this, this.value, this.error);
-            }
-            else
-                this._callbacks.push(handle);
-            return this;
-        };
-        Module.prototype._done = function () {
-            if (this.defineProc && this.error === undefined)
-                this.value = this.defineProc.apply(this, this.imports);
-            var callbacks = this._callbacks;
-            this._callbacks = undefined;
-            if (callbacks)
-                for (var i = 0, j = callbacks.length; i < j; i++) {
-                    callbacks[i].call(this, this.value, this.error);
-                }
+        Module.prototype._finish = function (success, resolve) {
+            //this.value = success;
+            //if(this.define && this.error===undefined)this.value = this.define.apply(this,this.imports);               
         };
         Module.prototype.disposing = function (handler) {
             if (this._disposing) {
@@ -584,52 +690,359 @@ var Y;
         Module.prototype.dispose = function () {
             if (this._disposing === undefined)
                 return;
+            var release_ref = function (deps, expireTime) {
+                if (!deps)
+                    return;
+                for (var i = 0, j = deps.length; i < j; i++) {
+                    var dep = deps[i];
+                    if (dep) {
+                        if (--dep.ref_count == 0 && dep.expiry && dep.activeTime.valueOf() < expireTime) {
+                            if (dep.alias)
+                                delete Module.cache[dep.alias];
+                            if (dep.url)
+                                delete Module.cache[dep.url];
+                        }
+                    }
+                }
+            };
+            var expireTime = (new Date()).valueOf() - Module.aliveMilliseconds || 300000;
+            release_ref(this.scopes, expireTime);
+            release_ref(this.imports, expireTime);
+            release_ref(this.shares, expireTime);
+            this.scopes = this.imports = this.shares = undefined;
+            if (this.value && this.value.dispose) {
+                this.value.dispose();
+            }
             for (var n in this._disposing) {
                 var fn = this._disposing[n];
                 fn.call(this);
             }
         };
-        Module.load = function (url, callback) {
-            var module = Module.cache[url];
+        Module.getDocumentHead = function () {
+            if (Module.documentHead)
+                return Module.documentHead;
+            var heads = document.getElementsByTagName("head");
+            if (heads != null && heads.length)
+                return Module.documentHead = heads[0];
+            return document.body || document.documentElement;
+        };
+        Module.prototype.toString = function () {
+            return "{object,Module(alias:" + this.alias + ",url:" + this.url + ",type:" + ModuleTypes[this.type] + ")}";
+        };
+        Module.prototype.load = function (urlOrOpts) {
+            if (!urlOrOpts) {
+                Y.logger.warn(new Error("empty argument"), "y/Module.load");
+                return Module.empty;
+            }
+            var opts;
+            if (typeof urlOrOpts === "string") {
+                opts = { url: urlOrOpts, alias: urlOrOpts };
+            }
+            else
+                opts = urlOrOpts;
+            var module = Module.cache[opts.alias] || Module.cache[opts.url];
             if (module) {
                 module.activeTime = new Date();
-                module.callback(callback);
-                return;
+                return module;
             }
-            else {
-                module = new Module(url, callback);
+            module = new Module(opts, this);
+            Module.cache[module.alias] = Module.cache[module.alias] = module;
+            return module;
+        };
+        Module.prototype.loadMany = function (deps) {
+            var _this = this;
+            if (!deps) {
+                Y.logger.warn(new Error("empty argument"), "y/Module.loadMany");
+                return Module.empty;
             }
+            if (deps.length == 0)
+                return Module.empty;
+            return Promise.when(deps, function (dep) {
+                return _this.load(dep);
+            });
         };
-        Module.define = function (opts) {
-            Module.exportModuleOpts = opts;
-        };
+        /*
+        public static load(url:string|IModuleOpts,callback?:ILoadCallback):IModule{
+            
+            
+        }
+        public static exports;
+        public static readonly NoneExports = {};
+        /// 1 define("jquery",$); 直接定义模块的值
+        /// 2 define(["a1.js","a2.js"],function(a1,a2){});
+        /// 3 define({id:"moduleId",..etc});
+        public static define(opts:IModuleOpts|Array<ISourceOpts|string>,define?:any){
+            let _opts:IModuleOpts;
+            if(typeof opts=="string"){
+                let urlOrId:string = opts as string;
+                if(define===undefined){
+                    throw new Error("No value was defined.");
+                }
+                _opts = {id:urlOrId,value:define};
+                Module.load(_opts);
+            }else if(isArray(opts)){
+                _opts = {imports:<Array<ISourceOpts|string>>opts,define : define};
+            }
+            Source.exports = _opts;
+            
+        }*/
         Module.clearExpired = function () {
-            var expireTime = (new Date()).valueOf() - Module.aliveMilliseconds || 300000;
-            var cache = {};
-            var moduleCache = Module.cache;
-            var count = 0;
-            for (var n in moduleCache) {
-                var module_1 = moduleCache[n];
-                if (module_1.ref_count <= 0 && module_1.activeTime.valueOf() < expireTime) {
-                    module_1.dispose();
-                }
-                else {
-                    cache[n] = module_1;
-                    count++;
-                }
+            /*let expireTime :number = (new Date()).valueOf() - Module.aliveMilliseconds|| 300000;
+            let cache:{[index:string]:Module}={};
+            let moduleCache:{[index:string]:Module}=Module.cache;
+            let count:number = 0;
+            for(let n in moduleCache){
+                let module = moduleCache[n];
+                if(module.ref_count<=0 && module.activeTime.valueOf()<expireTime){
+                    module.dispose();
+                }else{ cache[n] = module;count++;}
             }
             Module.cache = cache;
-            if (count === 0) {
+            if(count===0) {
                 clearInterval(Module.clearTimer);
                 Module.clearTimer = undefined;
-            }
+            }*/
         };
         return Module;
-    }());
-    Module.cache = {};
+    }(Promise));
     Module.clearInterval = 60000;
     Module.aliveMilliseconds = 300000;
-    Y.module = Module.define;
+    Module.cache = {};
+    Module.loaders = {
+        "script": function (url) {
+            return new Promise(function (resolve, reject) {
+                var elem = document.createElement("script");
+                elem.src = url;
+                elem.type = "text/javascript";
+                var getExports = function () {
+                    var exports = Module.exports;
+                    if (exports === Y.NONE)
+                        return undefined;
+                    Module.exports = Y.NONE;
+                    return exports;
+                };
+                if (elem["onreadystatechange"] !== undefined) {
+                    elem.onreadystatechange = function () {
+                        if (elem.readyState == 4 || elem.readyState == "complete") {
+                            resolve({ value: getExports(), element: elem });
+                        }
+                    };
+                }
+                else
+                    elem.onload = function () {
+                        resolve({ value: getExports(), element: elem, url: url, type: ModuleTypes.script });
+                    };
+                elem.onerror = function (ex) {
+                    Y.logger.error(ex, "y/module.loadRes");
+                    reject(ex, elem);
+                };
+                Module.getDocumentHead().appendChild(elem);
+            });
+        },
+        "css": function (url) {
+            return new Promise(function (resolve, reject) {
+                var elem = document.createElement("link");
+                elem.href = url;
+                elem.type = "text/css";
+                elem.rel = "stylesheet";
+                var getExports = function () {
+                    return document.styleSheets[document.styleSheets.length - 1];
+                };
+                if (elem["onreadystatechange"] !== undefined) {
+                    elem.onreadystatechange = function () {
+                        if (elem.readyState == 4 || elem.readyState == "complete") {
+                            resolve({ value: getExports(), element: elem, url: url, type: ModuleTypes.css });
+                        }
+                    };
+                }
+                else
+                    elem.onload = function () {
+                        resolve({ value: getExports(), element: elem, url: url });
+                    };
+                elem.onerror = function (ex) {
+                    Y.logger.error(ex, "y/module.loadRes");
+                    reject(ex, elem);
+                };
+                Module.getDocumentHead().appendChild(elem);
+            });
+        },
+        "json": function (url) {
+            return new Promise(function (resolve, reject) {
+                Y.platform.getStatic(url).done(function (text) {
+                    try {
+                        var json = JSON.parse(text);
+                        resolve({ value: json, url: url, type: ModuleTypes.json });
+                    }
+                    catch (ex) {
+                        reject(ex);
+                    }
+                }).fail(reject);
+            });
+        },
+        "text": function (url) {
+            return new Promise(function (resolve, reject) {
+                Y.platform.getStatic(url).done(function (text) {
+                    resolve({ value: text, url: url, type: ModuleTypes.text });
+                }).fail(reject);
+            });
+        },
+        "page": function (url) {
+            return new Promise(function (resolve, reject) {
+                Y.platform.getStatic(url).done(function (html) {
+                    var elem = document.createElement("div");
+                    html = html.replace("<!DOCTYPE html>", "")
+                        .replace(/<html\s/i, "<div ")
+                        .replace(/<\/html>/i, "<div ")
+                        .replace(/<head\s/i, "<div class='y-head' ")
+                        .replace(/<\/head>/i, "</div>")
+                        .replace(/<body\s/i, "<div class='y-body' ")
+                        .replace(/<\/body>/i, "</div>");
+                    elem.innerHTML = html;
+                    var shares = [];
+                    var scopes = [];
+                    var scripts = toArray(elem.getElementsByTagName("script"));
+                    var defineScript;
+                    for (var i = 0, j = scripts.length; i < j; i++) {
+                        var script = scripts[i];
+                        var url_1 = script.getAttribute("src");
+                        var defineAttr = script.getAttribute("y-module-define");
+                        if (defineAttr !== undefined) {
+                            defineScript = script;
+                            defineScript.parentNode.removeChild(defineScript);
+                        }
+                        if (!url_1)
+                            continue;
+                        var alias = script.getAttribute("y-alias");
+                        var scriptOpts = {
+                            url: url_1,
+                            alias: alias || url_1,
+                            type: ModuleTypes.script
+                        };
+                        var isScope = script.getAttribute("y-module-scope");
+                        var isGlobal = script.getAttribute("y-module-global");
+                        if (isGlobal !== null && isGlobal !== undefined)
+                            scriptOpts.expiry = -1;
+                        (isScope !== null && isScope !== undefined ? scopes : shares).push(scriptOpts);
+                        script.parentNode.removeChild(script);
+                    }
+                    var links = toArray(elem.getElementsByTagName("link"));
+                    for (var i = 0, j = links.length; i < j; i++) {
+                        var link = links[i];
+                        var url_2 = link.getAttribute("href");
+                        if (!url_2)
+                            continue;
+                        var alias = link.getAttribute("y-alias");
+                        var cssOpts = {
+                            url: url_2,
+                            alias: alias || url_2,
+                            type: ModuleTypes.css
+                        };
+                        var isScope = link.getAttribute("y-module-scope");
+                        var isGlobal = link.getAttribute("y-module-global");
+                        if (isGlobal !== null && isGlobal !== undefined)
+                            cssOpts.expiry = -1;
+                        (isScope !== null && isScope !== undefined ? scopes : shares).push(cssOpts);
+                        link.parentNode.removeChild(link);
+                    }
+                    var moOpts = {
+                        url: url,
+                        type: ModuleTypes.page,
+                        element: elem,
+                        scopes: scopes,
+                        shares: shares
+                    };
+                    if (defineScript.src) {
+                        moOpts.define = defineScript.src;
+                    }
+                    else {
+                        moOpts.define = new Function(defineScript.innerHTML);
+                    }
+                    resolve(moOpts);
+                }).fail(reject);
+            });
+        }
+    };
+    Module.loadRes = function (url, type) {
+        if (!url)
+            return new Promise(Module.nonRes);
+        return new Promise(function (resolve, reject) {
+            if (type === undefined)
+                type = Module.getResType(url);
+            var loader = Module.loaders[ModuleTypes[type]];
+            if (!loader) {
+                var ex = new Error("Cannot load this resource " + name);
+                Y.logger.error(ex, "y/module.loadRes");
+                reject(ex);
+                return;
+            }
+            resolve(loader(url));
+        });
+    };
+    Module.empty = new Module({ type: ModuleTypes.none });
+    Module.nonRes = { type: ModuleTypes.none };
+    Y.Module = Module;
+    Y.platform.attach(window, "load", function () {
+        var rootOpts = { url: location.href, alias: "$root", value: window };
+        var basUrl = location.protocol + "://" + location.hostname + ":" + location.port + "/";
+        var paths = location.pathname.replace(/\/$/, "").split("/");
+        paths.pop();
+        basUrl += paths.join("/") + "/";
+        rootOpts.basUrl = basUrl;
+        var parseModOpts = function (elem) {
+            var url = elem.src || elem.href;
+            if (!url)
+                return;
+            var result = {};
+            var alias = elem.getAttribute("y-alias");
+            var valName = elem.getAttribute("y-module-value");
+            if (valName) {
+                eval("valName=" + valName);
+            }
+            else
+                valName = Y.NONE;
+            result.url = url;
+            result.alias = alias || url;
+            result.expiry = -1;
+            result.value = valName;
+            return result;
+        };
+        var bootPageUrl;
+        var bootArea;
+        var bootAlias;
+        var defineScript;
+        var scripts = document.getElementsByTagName("script");
+        for (var i = 0, j = scripts.length; i < j; i++) {
+            var script = scripts[i];
+            var opts = parseModOpts(script);
+            if (opts)
+                Module.cache[opts.alias] = Module.cache[opts.url] = new Module(opts);
+            var url = script.getAttribute("y-boot-page");
+            if (url) {
+                bootPageUrl = url;
+                var area = script.getAttribute("y-boot-area");
+                if (area)
+                    bootArea = area;
+                bootAlias = script.getAttribute("y-boot-alias");
+            }
+            var defineAttr = script.getAttribute("y-module-define");
+            if (defineAttr !== undefined && defineAttr !== null)
+                defineScript = script;
+        }
+        var links = document.getElementsByTagName("link");
+        for (var i = 0, j = links.length; i < j; i++) {
+            var opts = parseModOpts(links[i]);
+            if (opts)
+                Module.cache[opts.alias] = Module.cache[opts.url] = new Module(opts);
+        }
+        Module.root = new Module(rootOpts);
+        if (bootPageUrl)
+            Module.root.load({
+                url: bootPageUrl,
+                alias: bootAlias,
+                type: ModuleTypes.page
+            });
+    });
+    //export let module = Module.define; 
     ////////////////////////////////////
     /// Model
     ///////////////////////////////////
@@ -1887,21 +2300,17 @@ var Y;
     }; //end eachBind
     function controll(opts) {
         var area = (opts.area) ? Y.platform.getElement(opts.area) : null;
-        Module.load(opts.url, function (proto, error) {
-            if (error) {
-                opts.callback(undefined, error);
-                return;
-            }
-            var module = this;
-            if (proto === undefined) {
-                if (area && this.viewTemplate) {
-                    area.innerHTML = this.viewTemplate.innerHTML;
+        Module.root.load(opts.url).done(function (module) {
+            var proto = module.value;
+            if (module.value === undefined) {
+                if (area && (module).element) {
+                    area.innerHTML = (module).element.innerHTML;
                 }
                 return;
             }
             var controllerType = module.data["y-controllerType"];
             if (!controllerType) {
-                controllerType = proto;
+                controllerType = module.value;
                 if (typeof proto === "object") {
                     controllerType = function () { };
                     controllerType.prototype = proto;
@@ -1925,24 +2334,10 @@ var Y;
             if (remotes) {
             }
             controller.load(controller.model, controller.view);
-            if (opts.callback)
-                opts.callback(controller);
+            //if(opts.callback) opts.callback.call(this,controller);    
         });
     }
     Y.controll = controll;
-    Y.platform.attach(window, "load", function () {
-        var scripts = document.getElementsByTagName("script");
-        for (var i = 0, j = scripts.length; i < j; i++) {
-            var booturl = scripts[i].getAttribute("y-boot-url");
-            if (booturl) {
-                var elemId = scripts[i].getAttribute("y-boot-area");
-                Y.controll({
-                    url: booturl,
-                    area: document.getElementById(elemId)
-                });
-            }
-        }
-    });
     var _seed = 0;
     function seed() {
         return (_seed == 2100000000) ? _seed = 0 : _seed++;
