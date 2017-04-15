@@ -534,6 +534,127 @@ var Y;
     }
     Y.language = language;
     ////////////////////////////////////
+    //Uri
+    ////////////////////////////////////
+    var Uri = (function () {
+        function Uri(urlOrPath, relative) {
+            this.orignal = urlOrPath;
+            this.relative = relative;
+            urlOrPath = this._parseQueryAndHash(urlOrPath);
+            var basPath;
+            var relativePath;
+            var matches = urlOrPath.match(Uri.patten);
+            //urlOrpath 是个绝对地址，它的路径就是绝对地址的路径,拼接路径
+            if (matches != null) {
+                relativePath = "";
+                basPath = matches[4];
+            }
+            else {
+                if (relative) {
+                    matches = relative.match(Uri.patten);
+                    //相对url是个绝对地址
+                    if (matches) {
+                        relativePath = urlOrPath;
+                        basPath = (relativePath[0] == "/") ? "" : matches[4];
+                    }
+                    else {
+                        relativePath = urlOrPath;
+                        basPath = (relativePath[0] == "/") ? "" : relative;
+                    }
+                }
+                else {
+                    relativePath = urlOrPath;
+                    basPath = Uri.current.path;
+                }
+            }
+            if (matches) {
+                this.protocol = matches[1];
+                this.domain = matches[2];
+                this.port = parseInt(matches[3]);
+                this.host = "";
+                if (this.protocol)
+                    this.host = this.protocol + "://";
+                if (this.domain)
+                    this.host += this.domain;
+                if (this.port)
+                    this.host += ":" + this.port;
+            }
+            var paths = (basPath + "/" + relativePath).split("/");
+            var rs = [];
+            for (var i = 0, j = paths.length; i < j; i++) {
+                var ps = paths[i];
+                if (!ps)
+                    continue;
+                if (ps === ".")
+                    continue;
+                if (ps === "..") {
+                    rs.pop();
+                    continue;
+                }
+                rs.push(ps);
+            }
+            this._makeAbsolute(rs);
+        }
+        Uri.prototype._makeAbsolute = function (rels) {
+            this.file = rels.pop();
+            this.dir = rels.join("/");
+            if (this.file)
+                rels.push(this.file);
+            this.path = "/" + rels.join("/");
+            this.absolute = (this.host || Uri.current.host) + this.path;
+            if (this.querystring)
+                this.absolute += "?" + this.querystring;
+            if (this.hash)
+                this.absolute += "#" + this.hash;
+        };
+        Uri.prototype._parseQueryAndHash = function (str) {
+            if (!str) {
+                this.query = {};
+                return "";
+            }
+            var at = str.indexOf("?");
+            var path;
+            var querystring;
+            var hashpart;
+            if (at >= 0) {
+                hashpart = querystring = str.substr(at + 1);
+                path = str.substr(0, at);
+            }
+            else
+                hashpart = str;
+            at = hashpart.indexOf("#");
+            if (at >= 0) {
+                this.hash = hashpart.substr(at + 1);
+                if (querystring)
+                    querystring = hashpart.substr(0, at);
+                if (!path)
+                    path = hashpart.substr(0, at);
+            }
+            else
+                path = hashpart;
+            this.query = Uri.parseQueryString(this.querystring = querystring);
+            return path;
+        };
+        Uri.parseQueryString = function (querystr, extra) {
+            var result = {};
+            if (!querystr)
+                return result;
+            var sets = querystr.split('&');
+            for (var i = 0, j = sets.length; i < j; i++) {
+                var set = sets[i];
+                var _a = set.split('='), key = _a[0], value = _a[1];
+                result[key] = value;
+                if (extra)
+                    extra[key] = value;
+            }
+            return result;
+        };
+        return Uri;
+    }());
+    Uri.patten = /^(?:([a-zA-Z][a-zA-Z0-9]*):\/\/)([^\:\/\.]+(?:\.[^\:\/\.]+)*)(?:\:(\d{2,5}))?((?:\/[^\/\?#]*)*)/i;
+    Uri.current = new Uri(location.href);
+    Y.Uri = Uri;
+    ////////////////////////////////////
     /// 模块化
     ////////////////////////////////////
     var ControlOpts = (function () {
@@ -618,6 +739,22 @@ var Y;
             if (/(?:.jpg$)|(?:.png$)|(?:.bmp$)|(?:.gif$)/i.test(url))
                 return ModuleTypes.image;
             return undefined;
+        };
+        Module.prototype.resolveUrl = function (url) {
+        };
+        Module.parentPath = function (path) {
+            var at = path.lastIndexOf("/");
+            //my.html => ''
+            if (at < 0)
+                return "";
+            // /my.html => /
+            if (at == 0)
+                return "/";
+            // http://mydomain.com
+            if (path[at - 1] === "/" && path[at - 2] === ":")
+                return path + "/";
+            // /user/my.html => /user/
+            return path.substring(0, at);
         };
         Module.prototype._combineModuleOpts = function (dest, src) {
             if (!src) {
