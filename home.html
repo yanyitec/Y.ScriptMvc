@@ -22,7 +22,7 @@
   <body>
     
     <h1>你好，世界！</h1>
-    <div id="layout">测试css加载</div>
+    <div id="layout" y-controller="layout,sys/sys.html">测试css加载</div>
 
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
     <script src="scripts/jquery.min.js" y-alias="jquery.js" y-module-global y-module-value="jQuery"></script>
@@ -31,7 +31,7 @@
     <!-- the beatifull bootstrap ui -->
     <script src="scripts/flat-ui.min.js" y-alias="flatui.js" y-module-global></script>
 
-    <script src="scripts/mvc.js" y-boot-page1="sys/sys.html" y-boot-area="layout"></script>
+    <script src="scripts/mvc.js"></script>
 
     <script>
       //Y.Module.loadResource("css/my.css").done(function(elem){

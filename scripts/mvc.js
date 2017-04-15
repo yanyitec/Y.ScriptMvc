@@ -538,6 +538,8 @@ var Y;
     ////////////////////////////////////
     var Uri = (function () {
         function Uri(urlOrPath, relative) {
+            if (!urlOrPath)
+                return;
             this.orignal = urlOrPath;
             this.relative = relative;
             urlOrPath = this._parseQueryAndHash(urlOrPath);
@@ -551,7 +553,11 @@ var Y;
             }
             else {
                 if (relative) {
-                    matches = relative.match(Uri.patten);
+                    if (relative instanceof Uri) {
+                        matches = [null, relative.protocol, relative.domain, relative.port, relative.path];
+                    }
+                    else
+                        matches = relative.match(Uri.patten);
                     //相对url是个绝对地址
                     if (matches) {
                         relativePath = urlOrPath;
@@ -595,13 +601,19 @@ var Y;
             }
             this._makeAbsolute(rs);
         }
+        Uri.prototype.clone = function (target) {
+            target || (target = new Uri());
+            for (var n in this)
+                target[n] = this[n];
+        };
+        Uri.prototype.toString = function () { return this.absolute; };
         Uri.prototype._makeAbsolute = function (rels) {
             this.file = rels.pop();
             this.dir = rels.join("/");
             if (this.file)
                 rels.push(this.file);
             this.path = "/" + rels.join("/");
-            this.absolute = (this.host || Uri.current.host) + this.path;
+            this.location = this.absolute = (this.host || Uri.current.host) + this.path;
             if (this.querystring)
                 this.absolute += "?" + this.querystring;
             if (this.hash)
@@ -690,8 +702,9 @@ var Y;
             var me = _this;
             _this.container = container;
             _this.alias = opts.alias || opts.url;
-            _this.url = opts.url;
-            _this.basUrl = opts.basUrl;
+            if (opts.url) {
+                _this.uri = new Uri(opts.url, (container && container.uri) ? container.uri : null);
+            }
             _this.ref_count = 0;
             _this._disposing = [];
             _this.data = opts.data || {};
@@ -714,8 +727,8 @@ var Y;
             }
             var _a = _this, resolve = _a.resolve, reject = _a.reject;
             _this.reject = _this.reject = undefined;
-            if (_this.url) {
-                Module.loadRes(_this.url, _this.type).then(function (newOpts) {
+            if (_this.uri) {
+                Module.loadRes(_this.uri.absolute, _this.type).then(function (newOpts) {
                     _this._combineModuleOpts(opts, newOpts);
                     _this._init(opts, resolve, reject);
                 }, function (err) { return reject(err); });
@@ -836,8 +849,8 @@ var Y;
                         if (--dep.ref_count == 0 && dep.expiry && dep.activeTime.valueOf() < expireTime) {
                             if (dep.alias)
                                 delete Module.cache[dep.alias];
-                            if (dep.url)
-                                delete Module.cache[dep.url];
+                            if (dep.uri)
+                                delete Module.cache[dep.uri.absolute];
                         }
                     }
                 }
@@ -864,7 +877,7 @@ var Y;
             return document.body || document.documentElement;
         };
         Module.prototype.toString = function () {
-            return "{object,Module(alias:" + this.alias + ",url:" + this.url + ",type:" + ModuleTypes[this.type] + ")}";
+            return "{object,Module(alias:" + this.alias + ",url:" + this.uri + ",type:" + ModuleTypes[this.type] + ")}";
         };
         Module.prototype.load = function (urlOrOpts) {
             if (!urlOrOpts) {
@@ -1123,8 +1136,6 @@ var Y;
         var basUrl = location.protocol + "://" + location.hostname + ":" + location.port + "/";
         var paths = location.pathname.replace(/\/$/, "").split("/");
         paths.pop();
-        basUrl += paths.join("/") + "/";
-        rootOpts.basUrl = basUrl;
         var parseModOpts = function (elem) {
             var url = elem.src || elem.href;
             if (!url)
@@ -1172,6 +1183,7 @@ var Y;
                 Module.cache[opts.alias] = Module.cache[opts.url] = new Module(opts);
         }
         Module.root = new Module(rootOpts);
+        Module.root.uri = Uri.current;
         if (bootPageUrl)
             Module.root.load({
                 url: bootPageUrl,
