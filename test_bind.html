@@ -23,7 +23,11 @@
     
     <h1>你好，世界！</h1>
     <div id="layout" y-controller="layout,sys/sys.html">测试css加载</div>
-
+    <div id="test_bind">
+        <div>
+            <label y-text="#name#"></label><input type="text" y-value="$.Username" />
+        </div>
+    </div>
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
     <script src="scripts/jquery.min.js" y-alias="jquery.js" y-module-global y-module-value="jQuery"></script>
     <!-- Include all compiled plugins (below), or include individual files as needed -->
@@ -34,40 +38,14 @@
     <script src="scripts/mvc.js"></script>
 
     <script>
-      //Y.Module.loadResource("css/my.css").done(function(elem){
-      //  alert(elem);
-      //});
-      //var uri = new Y.Uri("interests","/mysite");
-
-      //单个属性object
-      var text = "url:http://mydomain.com";
-      var expr = Y.Expression.parse(text);
-      //多个属性object
-      var text = "url:http://mydomain.com , name:userController";
-      var expr = Y.Expression.parse(text);
-      //带括号
-      var text = "{url:http://mydomain.com , name:userController}";
-      var expr = Y.Expression.parse(text);
-
-      //递归
-      var text = "{user:{id:1,name:yiy} , name:userController}";
-      var expr = Y.Expression.parse(text);
-      //模型表达式
-      var text = "role:$.myrole,site : {name:$parent.site, url:$self.url}";
-      var expr = Y.Expression.parse(text);
-
-      //函数表达式
-      var text = "date($.createTime,yyyy-MM-dd)";
-      var expr = Y.Expression.parse(text);
-      //函数递归
-      var text = "format(date($.createTime),yyyy-MM-dd,getbase())";
-      var expr = Y.Expression.parse(text);
-
-      //混合了函数的
-      var text = "name:$name,mydate:format(date($.createTime),{format:yy-mm-dd,json:true}),token:12";
-      var expr = Y.Expression.parse(text);
-
-      console.log("ok");
+    var context = new Y.BindContext();
+    context.global_binders = Y._binders;
+    var model = context.$self = new Y.Model().$accessor;
+    context.local_binders = {};
+    var element = document.getElementById("test_bind");
+    var binder = Y.makeBinder(context,element);
+    binder(element,context.$self,context);
+    model.Username("yiy");
     </script>
   </body>
 </html>

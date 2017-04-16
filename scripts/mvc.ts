@@ -1340,7 +1340,7 @@ export namespace Y {
             let members: { [id: string]: Model } = this._members;
             if (members) {
                 
-                for (var name in members) {
+                for (let name in members) {
                     if (!members.hasOwnProperty(name)) { continue; }
                     var member: Model = members[name];
                     member.subject(newValue,evt);
@@ -1421,17 +1421,17 @@ export namespace Y {
             if(newModel._computed=this._computed){
                 return newModel;
             }
-            var members: { [id: string]: Model } = this._members;
+            let members: { [id: string]: Model } = this._members;
             if (members ) {
-                var newMembers: { [index: string]: Model } = newModel._members || (newModel._members = {});
-                var value:any = newSubject[newName] || (newSubject[newName]={});
-                var newAccessor :any = newModel.$accessor;
-                for (var name in members) {
+                let newMembers: { [index: string]: Model } = newModel._members || (newModel._members = {});
+                let value:any = newSubject[newName] || (newSubject[newName]={});
+                let newAccessor :any = newModel.$accessor;
+                for (let name in members) {
                     if (!members.hasOwnProperty(name)) { continue; }
-                    var member: Model = members[name];
-                    var newMember: Model = member.clone(value,name);
+                    let member: Model = members[name];
+                    let newMember: Model = member.clone(value,name);
                     newMembers[name] = newMember;
-                    var aname: string = Model.chromeKeywords[name] || name.toString();
+                    let aname: string = Model.chromeKeywords[name] || name.toString();
                     newAccessor[aname] = newMember.$accessor;
                 }
             }
@@ -1439,8 +1439,8 @@ export namespace Y {
         }
         public computed(deps: { [index: string]: IModel }, codes: Function | string): Model {
             if (this.$modelType !== ModelTypes.any) { throw "Already been computed."; }
-            var isFn: boolean = typeof codes === "function";
-            var fn: Function = null;
+            let isFn: boolean = typeof codes === "function";
+            let fn: Function = null;
             let args: Array<IModel|string> = [];
             let argnames: Array<string> = [];
             for (let n in deps) {
@@ -1472,7 +1472,7 @@ export namespace Y {
         public toArray(itemProto?: Model|{}): Model {
             if (this.$modelType!==ModelTypes.any) { throw "Already been computed."; }
             
-            var value: any = this._subject[this._name];
+            let value: any = this._subject[this._name];
             if (!value) { value = this._subject[this._name] = []; }
 
             if (itemProto === undefined) { itemProto = new Model(null, value); }
@@ -1483,7 +1483,7 @@ export namespace Y {
             this .itemProto = ():Model=>{return this._itemProto;};
             (itemProto as Model)._superior = this;
             
-            var accessor: IModelAccessor = this.$accessor;
+            let accessor: IModelAccessor = this.$accessor;
             this.$modelType = accessor.$modelType = ModelTypes.array;
             
             accessor.push = (itemValue: any):IModel => { (this as IModel).push(itemValue); return accessor; };
@@ -1519,9 +1519,9 @@ export namespace Y {
             let value: any = this._subject[this._name];
             if (!value) { value = this._subject[this._name] = []; }
 
-            var evt: ModelEvent = new ModelEvent(null, ModelActions.add, itemValue,undefined);
+            let evt: ModelEvent = new ModelEvent(null, ModelActions.add, itemValue,undefined);
             evt.index = value.length;
-            var evtp :ModelEvent = new ModelEvent(this,ModelActions.child,value,value,evt);
+            let evtp :ModelEvent = new ModelEvent(this,ModelActions.child,value,value,evt);
             value.push(itemValue);
             this._notifyValuechange(evtp);
             return this;
@@ -1532,8 +1532,8 @@ export namespace Y {
             if (!value) { return undefined; }
             if (value.length === 0) { return undefined; }
 
-            var itemValue: any = value.pop();
-            var itemModel: Model = this._members[value.length];
+            let itemValue: any = value.pop();
+            let itemModel: Model = this._members[value.length];
             let evt: ModelEvent = new ModelEvent(itemModel, ModelActions.remove, itemValue, itemValue);
             evt.index = value.length;
             if (itemModel !== undefined) { 
@@ -1555,14 +1555,14 @@ export namespace Y {
             if (!value) { value = this._subject[this._name] = []; }
             let members: { [index: string]: Model } = this._members;
             for (let i: number = 0, j: number = value.length - 1; i <= 0; j--) {
-                var member: Model = members[j.toString()];
-                var index: number = j + 1;
+                let member: Model = members[j.toString()];
+                let index: number = j + 1;
                 if (member instanceof Model) { members[index] = member; member.name(index); }
             }
-            var itemModel: Model = members[0];
+            let itemModel: Model = members[0];
             if (itemModel != null) { delete members[0]; }
             value.unshift(itemValue);
-            var evt: ModelEvent = new ModelEvent(this, ModelActions.add, value, value);
+            let evt: ModelEvent = new ModelEvent(this, ModelActions.add, value, value);
             evt.index = 0;
             
             this._notifyValuechange(evt);
@@ -1575,11 +1575,11 @@ export namespace Y {
             if (value.length === 0) { return undefined; }
 
             let members: { [index: string]: Model } = this._members;
-            var itemValue: any = value.shift();
-            var itemModel: Model = members[0];
+            let itemValue: any = value.shift();
+            let itemModel: Model = members[0];
             
             for (let i: number = 0, j: number = value.length ; i <j; i++) {
-                var member: Model = members[i + 1];
+                let member: Model = members[i + 1];
                 if (member instanceof Model) { members[i] = member; member.name(i); }
             }
             delete members[value.length];
@@ -2190,58 +2190,104 @@ export namespace Y {
     }
     export class BindContext{
         $self:IModelAccessor;
-        binders:{[index:string]:IBinder};
+        global_binders:{[index:string]:IBinder};
+        local_binders:{[index:string]:IBinder};
         element:HTMLElement;
         getFunc(name:string){return null;}
-        codes:string[];
+        label(key:string){return key;}
+        getBinder(name:string){
+            return this.local_binders[name]|| this.global_binders[name];
+        }
     }
     export interface IBinder{
-        (this:BindContext,element:HTMLElement,bindable:IBindable):void;
+        (element:HTMLElement,bindable:IBindable,context?:BindContext,initValue?:boolean):void;
     }
-    //<input y-value="date($Name,yyyy-MM-dd)" y-disable="contains($Permission,$ROOT.Check,startTime)" />
-    // ->>  context.binders.value(
-    //          context.element,
-    //          new BindDependences([context.$self.Name],function(){return context.getFunc("date")(this.deps[0](),"yyyy-MM-dd");}),
-    //      );
-    //
-    //<select y-value="$MySelect"  />
-    // ->>  context.binders.value(
-    //          context.element,
-    //          new BindDependences(context.$self.MySelect)
-    //      );
-    //
-    //<label>#username#</label>:<span>Hi,{{Username}},</span>
-    // context.label(context.element,"username");
-    // context.binders.text(
-    //  context.element,
-    //  new BindDependences([context.$self.Username],function(){return "Hi," + this.deps[0]() + ",";})
-    //)
-    //<button y-click="onsubmit">
-    //<div y-controller='user,http://pro.com/user'></div> none
-    //<div y-text='(price:$.Price,qty:Quanity)=>price*qty'></div>
+    
+    function parseElement(context:BindContext,element:HTMLElement,expressions:Expression[]){
+        if(element.nodeType==3){
+            let embededExpr = ComputedExpression.embeded(element.nodeValue);
+            if(embededExpr)   expressions.push(new BindExpression("y-text",embededExpr));
+            return;
+        }
+        let each:Expression;
+        let controller:Expression;
+        let scope:Expression;
+        let ui :Expression;
+        let attrs = element.attributes;
+        for(let i =0,j=attrs.length;i<j;i++){
+            let attr = attrs[i];
+            let attrname = attr.name;
+            let attrvalue = attr.value;
+            let binder = context.global_binders[attrname];
+            if(!binder) binder = context.local_binders[attrname];
+            if(!binder) continue;
+            let expr = Expression.parse(attrvalue);
+            if(!expr) continue;
+            expr = new BindExpression(attrname,expr);
+            switch(attrname){
+                case "y-each":each = expr;continue;
+                case "y-controller":controller = expr;continue;
+                case "y-scope":scope = expr;continue;
+                case "y-ui":ui = expr;continue;
+            }
+            expressions.push(expr);
+        }
+        if(!element.hasChildNodes) return; 
+        let nodes = element.childNodes;
+        for(let i =0,j=nodes.length;i<j;i++){
+            let node = nodes[i];
+            expressions.push(new ChildBeginExpression(i,element as HTMLElement));
+            parseElement(context,node as HTMLElement , expressions);
+            let last = expressions.pop() as ChildBeginExpression;
+            if(last.childAt!=i || last.parentNode!=element){
+                expressions.push(last);
+                expressions.push(new ChildEndExpression(i,element));
+            }
+        }
+    }
+    export function makeBinder(context:BindContext,element:HTMLElement):IBinder{
+        let exprs:Expression[] = [];
+        parseElement(context,element,exprs);
+        while(true){
+            let last = exprs.pop();
+            if(!last) break;
+            if((<ChildBeginExpression>last).childAt===undefined &&  !(<ChildBeginExpression>last).parentNode){
+                exprs.push(last);break;
+            }
+        }
+        let code ="";
+        for(let i=0,j=exprs.length;i<j;i++){
+            code += exprs[i].toCode(context);
+        }
+        //(this:BindContext,element:HTMLElement,bindable:IBindable):void;
+        code = "context.element = element;context.$self = bindable;\n" + code;
+        let binder = new Function("element","bindable","context",code) as IBinder;
+        return binder ; 
+    }
+
     
     export enum ExpressionTypes{
         //固定表达式  y-controller='user,http://pro.com/user' y-click="onsubmit"
         constant,
         //模型表达式 $ROOT.Title
         model,
+        //多语言化表达式
+        label,
         //函数表达式  contains($Permission,$ROOT.Check,startTime)
         function,
-        //参数表达式
-        parameter,
-        
-        //计算表达式 (price:$.Price,qty:Quanity)=>price*qty
+        object,
+        key,
+        //计算表达式 (price:$.Price,qty:Quanity)=>price*qty;
         computed,
         //嵌入表达式 Hi,{{$.Name}},now is {{date($.AccountingDate)}}
-        embeded,
+        //embeded,
         
         //绑定
         bind,
         childBegin,
         childEnd,
-        label,
-        object,
-        key
+        
+       
         //多个
         //url:$.url,name:mycontrol,dodo:date($.date,abc)
         
@@ -2259,17 +2305,15 @@ export namespace Y {
         getDeps(context:BindContext,deps?:string[]):string[]{throw new Error("Not implement");}
         
         toCode(context:BindContext):string{return null;}
-        static tryParse(text:string,opts?:ParseExpressionOpts):Expression{
+        static parse(text:string,opts?:ParseExpressionOpts):Expression{
             let expr :Expression;
+            if(expr = LabelExpression.parse(text)) return expr;
+            if(expr = ModelExpression.parse(text)) return expr;
+            if(expr = FunctionExpression.parse(text)) return expr;
+            if(expr = ObjectExpression.parse(text,opts)) return expr;
+            if(expr = ComputedExpression.parse(text)) return expr;
+            return ConstantExpression.parse(text,opts);
             
-            if( expr = ObjectExpression.tryParse(text,opts)) return expr;;
-            if(expr = ModelExpression.tryParse(text)) return expr;
-            if(expr = FunctionExpression.tryParse(text)) return expr;
-            return ConstantExpression.tryParse(text,opts);
-            //if(!exp) exp = FunctionExpression.tryParse(text);
-            //if(!exp) exp = ComputedExpression.tryParse(text);
-            //if(!exp) exp = LabelExpression.tryParse(text);
-            //if(!exp) exp = new ConstantExpression(text);
         }    
     }
     export class ConstantExpression extends Expression{
@@ -2290,11 +2334,11 @@ export namespace Y {
         } 
         static strict:boolean = false;
         
-        static tryParse(text:string , opts?:ParseExpressionOpts):ConstantExpression{
+        static parse(text:string , opts?:ParseExpressionOpts):ConstantExpression{
             if(!text) return;
-            let result  = ConstantExpression.tryParseQuote(text,"\"");
+            let result  = ConstantExpression.parseQuote(text,"\"");
             if(result) return result;
-            result  = ConstantExpression.tryParseQuote(text,"'");
+            result  = ConstantExpression.parseQuote(text,"'");
             if(result) return result;
             if(ConstantExpression.strict) return null;
             if(opts && opts.constantEndPatten) {
@@ -2309,7 +2353,7 @@ export namespace Y {
             return new ConstantExpression(text,text.length);
             
         }
-        static tryParseQuote(text:string,quote:string){
+        static parseQuote(text:string,quote:string){
             if(text[0]!=quote) return null;
             let quoteAt = 1;
             while(true){
@@ -2344,11 +2388,11 @@ export namespace Y {
                 if(!name) throw new Error("Invalid model path : " + names.join("."));
                 if(name=="$root" || name=="$"){
                     curr = curr.root();
-                    rs = ["$root"];
+                    rs = ["$self.$model.root().$accessor"];
                 }else if(name=="$parent"){
                     curr= curr.container();
                     rs.push("$model.container().$accessor")
-                }else if("$self"){
+                }else if(name == "$self"){
                     curr = curr;
                 }else{
                     curr = curr.prop(name,{});
@@ -2365,10 +2409,10 @@ export namespace Y {
         }
 
         toCode(context:BindContext):string{
-            return "context." + this.getPath(context) + ".$model";
+            return  this.getPath(context) + ".$model";
         } 
         static patten:RegExp = /^\s*\$(?:[a-zA-Z][a-zA-Z0-9_\$]*)?(?:\s*\.[a-zA-Z_\$][a-zA-Z0-9_\$]*)*\s*/i;
-        static tryParse(text:string):ModelExpression{
+        static parse(text:string,opts?:ParseExpressionOpts):ModelExpression{
             if(!text) return null;
             let matches = text.match(ModelExpression.patten);
             if(matches){
@@ -2378,6 +2422,26 @@ export namespace Y {
                 return result;
             } 
             return null;
+        }
+    }
+    export class LabelExpression extends Expression{
+        key:string;
+        constructor(key:string,len:number){
+            super();
+            this.type = ExpressionTypes.label;
+            this.key = key;
+            this.matchLength = len;
+        }
+        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
+            
+        toCode(context:BindContext):string{
+            return `context.label("${this.key}")`;
+        }
+        static patten :RegExp = /^#([^#]+)#/i;
+        static parse(text:string,opts?:ParseExpressionOpts):LabelExpression{
+            
+            let matches = text.match(LabelExpression.patten);
+            if(matches) return new LabelExpression(matches[1],matches[0].length);
         }
     }
     export class FunctionExpression extends Expression{
@@ -2401,7 +2465,7 @@ export namespace Y {
             return null;
         }
         static patten :RegExp = /^\s*([a-zA-Z_][a-zA-Z0-9_\$]*)\s*\(\s*/i;
-        static tryParse(text:string):FunctionExpression{
+        static parse(text:string,opts?:ParseExpressionOpts):FunctionExpression{
             if(!text)return null;
             let matches = text.match(FunctionExpression.patten);
             if(!matches)return null;
@@ -2415,7 +2479,7 @@ export namespace Y {
                 return new FunctionExpression(fnname,args,len);
             }
             while(true){
-                let arg = Expression.tryParse(text,{constantEndPatten:/[,\)]/i,objectBrackets:true});
+                let arg = Expression.parse(text,{constantEndPatten:/[,\)]/i,objectBrackets:true});
                 if(arg){
                     args.push(arg);
                     text =text.substr(arg.matchLength);
@@ -2443,203 +2507,6 @@ export namespace Y {
             return code += ")";
         } 
     }
-    export class ChildBeginExpression extends Expression{
-        at:number;
-        constructor(at:number){
-            super();
-            this.type = ExpressionTypes.childBegin;
-            this.at = at;
-        }
-        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
-            
-        toCode(context:BindContext):string{
-            return `context.element = context.element.childNodes[${this.at}];\n`;
-        }
-    }
-    export class ChildEndExpression extends Expression{
-        at:number;
-        constructor(at:number){
-            super();
-            this.type = ExpressionTypes.childEnd;
-            this.at = at;
-        }
-        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
-            
-        toCode(context:BindContext):string{
-            return `context.element = context.element.parentNode;\n`;
-        }
-    }
-    export class LabelExpression extends Expression{
-        key:string;
-        constructor(key:string){
-            super();
-            this.type = ExpressionTypes.childEnd;
-            this.key = key;
-        }
-        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
-            
-        toCode(context:BindContext):string{
-            return `context.label("${this.key}")`;
-        }
-        static patten :RegExp = /^#([^#]+)#$/i;
-        static tryParse(text:string):LabelExpression{
-            
-            let matches = text.match(LabelExpression.patten);
-            if(matches) return new LabelExpression(matches[1]);
-        }
-    }
-    export class BindExpression extends Expression{
-        bindername:string;
-        expression:Expression;
-        constructor(name:string,expr:Expression){
-            super();
-            this.type = ExpressionTypes.bind;
-            this.bindername = name;
-            this.expression = expr;
-        }
-        getDeps(context:BindContext,deps?:string[]):string[]{return this.expression.getDeps(context,deps);}
-            
-        toCode(context:BindContext):string{
-            switch(this.expression.type){
-                case ExpressionTypes.model:return this.toModelCode(context);
-                case ExpressionTypes.constant:return this.toConstantCode(context);
-                case ExpressionTypes.function:return this.toFuncCode(context);
-                case ExpressionTypes.computed:return this.toComputeCode(context);
-                case ExpressionTypes.label:return this.toLabelCode(context);
-                default:throw new Error("Not implement");
-            }
-        }   
-        toModelCode(context:BindContext):string{
-            //binders.value.call(context,context.element, context.$self.Username.$model);
-            return  `context.binders.${this.bindername}.call(context,context.`+ this.expression.toCode(context) + ".$model);\n";
-        } 
-        toFuncCode(context:BindContext):string{
-            var deps = this.getDeps(context).join(",");
-            return  `context.binders.${this.bindername}.call(context,new Y.BindDependences([${deps}],`+ this.expression.toCode(context) + "));\n";
-        }  
-        toConstantCode(context:BindContext):string{
-            return  `context.binders.${this.bindername}.call(context,new Y.ConstantBindableObject(`+this.expression.toCode(context)+"));\n";
-        }   
-        toComputeCode(context:BindContext):string{
-            var deps = this.getDeps(context).join(",");
-            return  `context.binders.${this.bindername}.call(context,new Y.BindDependences([${deps}],`+ this.expression.toCode(context) + "));\n";
-        }  
-        toLabelCode(context:BindContext):string{
-            return `context.innerHTML = ` +this.expression.toCode(context) + ";\n";
-        }
-    }
-    
-    
-    export class ParameterExpression extends Expression{
-        name:string;
-        expression:Expression;
-        constructor(name:string,expr:Expression){
-            super();
-            this.type = ExpressionTypes.parameter;
-            this.name = name;
-            this.expression = expr;
-        }
-        getDeps(context:BindContext,deps?:string[]):string[]{
-            return this.expression.getDeps(context,deps);
-        }
-
-        static tryParse(text:string):ParameterExpression{
-            if(!text)return null;
-            let pair = text.split(":");
-            if(pair.length!=2)return null;
-            return new ParameterExpression(pair[0], Expression.tryParse(pair[1]));
-        }
-    }
-    export class ComputedExpression extends Expression{
-        parameters:ParameterExpression[];
-        code:string;
-        constructor(parameters:ParameterExpression[],code:string){
-            super();
-            this.type = ExpressionTypes.computed;
-            this.parameters = parameters;
-            this.code = code;
-        }
-        private _func:Function;
-        getFunc(){
-            if(this._func) return this._func;
-            let code = "return function(";
-            for(let i=0,j=this.parameters.length;i<j;i++){
-                if(i!=0) code+=",";
-                code += this.parameters[i].name;
-            }
-            code = "){" + this.code + "};";
-            let fn = new Function(code);
-            this._func = fn();
-        }
-        toCode(context:BindContext):string{
-            let pars = "";
-            let args = "";
-            for(let i=0,j=this.parameters.length;i<j;i++){
-                if(i!=0) {args+=",";pars+=",";}
-                pars += this.parameters[i].name;
-                args += this.parameters[i].expression.toCode(context);
-            }
-            return "(function(" + pars + "){return " + this.code + ";})(" + args + ")";
-        }
-        getDeps(context:BindContext,deps?:string[]):string[]{
-            deps||(deps=[]);
-            let c = deps.length;
-            for(let i=0,j=this.parameters.length;i<j;i++){
-                this.parameters[i].getDeps(context,deps);
-            }
-            if(c<deps.length)return deps;
-            return null;
-        }
-        static tryParse(text:string):ComputedExpression{
-            let arrowAt = text.indexOf("=>");
-            if(arrowAt<0) return null;
-            let parText = text.substr(0,arrowAt).replace(/(?:^\s*\()|(?:\)\s*$)/i,"");
-            let parExps :ParameterExpression[] = [];
-            if(parText){
-                let pars = parText.split(",");
-                for(let i =0,j=pars.length;i<j;i++){
-                    let exp = ParameterExpression.tryParse(pars[i]);
-                    if(exp)parExps.push (exp);
-                    else {
-                        let err = new Error(text +" 不是正确的计算表达式:" + pars[i] + "不能识别为参数");
-                        logger.error(err,"/y/Expression/computed");
-                    }
-                }
-            }
-            let code = text.substr(arrowAt + 2);
-            return new ComputedExpression(parExps,code);
-        }
-        static TryParseEmbeded(text:string):ComputedExpression{
-            let pars :ParameterExpression[] = [];
-            let code = "";
-            let at =0;
-            let lastAt = 0;
-            while(true){
-                let startAt =at = text.indexOf("{{",at);
-                if(startAt<0)break;
-                let endAt =at = text.indexOf("}}",at);
-                if(endAt<0) break;
-                let exptext = text.substring(startAt + 2,endAt).replace(trimRegex,"");
-                if(!exptext) continue;
-                let exp = Expression.tryParse(exptext);
-                if(exp.type === ExpressionTypes.constant)continue;
-                let ctext = toJsonString(text.substring(lastAt,startAt));
-                let argname ="__y_EMBEDED_ARGS_" + pars.length;
-                code += "\"" + ctext + "\" + " + argname;
-                pars.push(new ParameterExpression(argname,exp));
-                lastAt = at +2;
-            }
-            if(lastAt>0) {
-                let ctext = toJsonString(text.substring(lastAt));
-                let argname ="__y_EMBEDED_ARGS_" + pars.length;
-                code += "\"" + ctext + "\";";
-            }
-            if(pars.length) return new ComputedExpression(pars,code);
-
-        }
-    }
-    
-
     export class KeyExpression extends Expression{
         key:string;
         constructor(key:string,len:number){
@@ -2654,12 +2521,11 @@ export namespace Y {
             return null;
         } 
         static patten:RegExp=/^(?:\s*,)?\s*([a-zA-Z_][a-zA-Z0-9_\$]*)\s*:\s*/i;
-        static tryParse(text:string):KeyExpression{
+        static parse(text:string):KeyExpression{
             let matches = text.match(KeyExpression.patten);
             return matches?new KeyExpression(matches[1],matches[0].length):null;
         }
     }
-
     export class ObjectExpression extends Expression{
         members:{[index:string]:Expression}
         constructor(members:{[index:string]:Expression},matchLength:number){
@@ -2673,7 +2539,7 @@ export namespace Y {
         toCode(context:BindContext):string{
             return null;
         } 
-        static tryParse(text:string , opts?:ParseExpressionOpts):ObjectExpression{
+        static parse(text:string , opts?:ParseExpressionOpts):ObjectExpression{
             if(!text) return null;
 
             let len :number = 0;
@@ -2716,7 +2582,7 @@ export namespace Y {
             }
             let obj :{[index:string]:Expression};
             while(true){
-                let keyExpr:KeyExpression = KeyExpression.tryParse(text);
+                let keyExpr:KeyExpression = KeyExpression.parse(text);
                 if(!keyExpr) {
                     if(needBrackets) throw new Error("不正确的Object表达式,无法分析出key:" + text);
                     break;
@@ -2725,7 +2591,7 @@ export namespace Y {
                 len += keyExpr.matchLength;
                 if(!text)break;
                 
-                let valueExpr = Expression.tryParse(text,{constantEndPatten:constEndPatten,objectBrackets:true});
+                let valueExpr = Expression.parse(text,{constantEndPatten:constEndPatten,objectBrackets:true});
                 if(!valueExpr)break;
                 (obj||(obj={}))[keyExpr.key] = valueExpr;
                 text = text.substr(valueExpr.matchLength);
@@ -2740,13 +2606,189 @@ export namespace Y {
             return obj?new ObjectExpression(obj,len):null;
         }
     }
+    export class ComputedExpression extends Expression{
+        parameters:{[index:string]:Expression};
+        code:string;
+        constructor(parameters:{[index:string]:Expression},code:string,len:number){
+            super();
+            this.type = ExpressionTypes.computed;
+            this.parameters = parameters;
+            this.code = code;
+            this.matchLength = len;
+        }
+        private _func:Function;
+       
+        toCode(context:BindContext):string{
+            let args ="";
+            let parnames = "";
+            let pars = this.parameters;
+            let at = 0;
+            for(let n in pars){
+                if(at!=0) {args +=",";parnames+=",";}
+                args+= pars[n].toCode(context);
+            }
+            return `(function(${parnames}){return ${this.code}})(${args})`;
+        }
+        getDeps(context:BindContext,deps?:string[]):string[]{
+            deps||(deps=[]);
+            let c = deps.length;
+            let pars = this.parameters;
+            for(let n in pars){
+                pars[n].getDeps(context,deps);
+            }
+            if(c<deps.length)return deps;
+            return null;
+        }
+        static patten:RegExp = /^\s*=>\s*/;
+        static parse(text:string,opts?:ParseExpressionOpts):ComputedExpression{
+            let paramExpr = ObjectExpression.parse(text,{objectBrackets:["\\(","\\)"]});
+            if(!paramExpr)return null;
+            let len = paramExpr.matchLength;
+            text = text.substr(len);
+            let matches = text.match(ComputedExpression.patten);
+            if(!matches)return;
+            len += matches[0].length;
+            text = text.substr(matches[0].length);
+            let semiAt = text.indexOf(";");
+            if(semiAt<0)return null;
+            len+= semiAt;
+            let code = text.substr(0,semiAt);
+            return new ComputedExpression((<ObjectExpression>paramExpr).members,code,len);
+            //ObjectExpression.parse();
+        }
+        static embeded(text:string):ComputedExpression{
+            let pars :{[index:string]:Expression} = {};
+            let code = "";
+            let at =0;
+            let lastAt = 0;
+            let parCount=0;
+            while(true){
+                let startAt =at = text.indexOf("{{",at);
+                if(startAt<0)break;
+                let endAt =at = text.indexOf("}}",at);
+                if(endAt<0) break;
+                let exptext = text.substring(startAt + 2,endAt).replace(trimRegex,"");
+                if(!exptext) continue;
+                let exp = Expression.parse(exptext);
+                
+                if(!exp || exp.type === ExpressionTypes.constant)continue;
+                let ctext = toJsonString(text.substring(lastAt,startAt));
+                let argname ="__y_EMBEDED_ARGS_" + parCount++;
+                code += "\"" + ctext + "\" + " + argname;
+                pars[argname] = exp;
+                lastAt = at +2;
+            }
+            if(lastAt>0) {
+                let ctext = toJsonString(text.substring(lastAt));
+                code += "\"" + ctext + "\";";
+            }
+            if(parCount>0) return new ComputedExpression(pars,code,text.length);
+            return null;
+            //if(pars.length) return new ComputedExpression(pars,code);
+
+        }
+    }
+    export class BindExpression extends Expression{
+        bindername:string;
+        expression:Expression;
+        constructor(name:string,expr:Expression){
+            super();
+            this.type = ExpressionTypes.bind;
+            this.bindername = name;
+            this.expression = expr;
+        }
+        getDeps(context:BindContext,deps?:string[]):string[]{return this.expression.getDeps(context,deps);}
+            
+        toCode(context:BindContext):string{
+            switch(this.expression.type){
+                case ExpressionTypes.model:return this.toModelCode(context);
+                case ExpressionTypes.constant:return this.toConstantCode(context);
+                case ExpressionTypes.function:return this.toFuncCode(context);
+                case ExpressionTypes.computed:return this.toComputedCode(context);
+                case ExpressionTypes.label:return this.toLabelCode(context);
+                case ExpressionTypes.object:return this.toLabelCode(context);
+                default:throw new Error("Not implement");
+            }
+        }   
+        toLabelCode(context:BindContext):string{
+            return `context.element.innerHTML = ` +this.expression.toCode(context) + ";\n";
+        }
+        toModelCode(context:BindContext):string{
+            //binders.value.call(context,context.element, context.$self.Username.$model);
+            return  `context.getBinder("${this.bindername}").call(context,context.element,context.`+ this.expression.toCode(context) + ",context);\n";
+        } 
+        toConstantCode(context:BindContext):string{
+            return  `context.binders[${this.bindername}].call(context,context.element,new Y.ConstantBindableObject(`+this.expression.toCode(context)+"),context);\n";
+        } 
+        toFuncCode(context:BindContext):string{
+            var deps = this.getDeps(context).join(",");
+            return  `context.binders[${this.bindername}].call(context,context.element,new Y.BindDependences([${deps}],function(){ return `+ this.expression.toCode(context) + "}),context);\n";
+        }  
+          
+        toComputedCode(context:BindContext):string{
+            var deps = this.getDeps(context).join(",");
+            return  `context.binders.${this.bindername}.call(context,context.element,new Y.BindDependences([${deps}],function(){ return `+ this.expression.toCode(context) + "}));\n";
+        }  
+        
+        toObjectCode(context:BindContext):string{
+            var deps = this.getDeps(context).join(",");
+            return  `context.binders.${this.bindername}.call(context,new Y.BindDependences([${deps}],function(){ return `+ this.expression.toCode(context) + "}));\n";
+        } 
+    }    
+    export class ChildBeginExpression extends Expression{
+        childAt:number;
+        parentNode:HTMLElement;
+        constructor(at:number, parent:HTMLElement){
+            super();
+            this.type = ExpressionTypes.childBegin;
+            this.childAt = at;
+            this.parentNode = parent;
+        }
+        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
+            
+        toCode(context:BindContext):string{
+            return `context.element = context.element.childNodes[${this.childAt}];\n`;
+        }
+    }
+    export class ChildEndExpression extends Expression{
+        childAt:number;
+        parentNode:HTMLElement;
+        constructor(at:number,parent:HTMLElement){
+            super();
+            this.childAt = at;
+            this.parentNode = parent;
+        }
+        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
+            
+        toCode(context:BindContext):string{
+            return `context.element = context.element.parentNode;\n`;
+        }
+    }
+
+    export let _binders:{[index:string]:IBinder} = {};
+    _binders["y-text"] = function(element:HTMLElement,bindable:IBindable,context:BindContext){
+        bindable.subscribe(function(sender,evt){
+            element.innerHTML = evt.value;
+        });
+    }
+    _binders["y-value"] = function(element:HTMLElement,bindable:IBindable,context:BindContext){
+        bindable.subscribe(function(sender, evt){
+            (<HTMLInputElement>element).value = evt.value;
+        });
+        platform.attach(element,"blur",()=>{
+            bindable.setValue((<HTMLInputElement>element).value);
+        });
+    }
+    
+    
+    
 
     
     export interface IABinder{
         (element:HTMLElement,accessor:IModelAccessor,controller:IController,extra?:any):Function;
     }
 
-    let binders :{[index:string]:IABinder}={
+    export let binders :{[index:string]:IABinder}={
             "bibound.text":function(element:HTMLElement, accessor:IModelAccessor):Function{
                 var handler = function (sender:IModel,evt:ModelEvent) { element.innerHTML = evt.value; };
                 accessor.subscribe(handler);

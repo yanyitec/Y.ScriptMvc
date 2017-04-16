@@ -1304,11 +1304,11 @@ var Y;
             this._notifyValuechange(evt, source instanceof ModelEvent);
             var members = this._members;
             if (members) {
-                for (var name in members) {
-                    if (!members.hasOwnProperty(name)) {
+                for (var name_1 in members) {
+                    if (!members.hasOwnProperty(name_1)) {
                         continue;
                     }
-                    var member = members[name];
+                    var member = members[name_1];
                     member.subject(newValue, evt);
                 }
             }
@@ -1400,14 +1400,14 @@ var Y;
                 var newMembers = newModel._members || (newModel._members = {});
                 var value = newSubject[newName] || (newSubject[newName] = {});
                 var newAccessor = newModel.$accessor;
-                for (var name in members) {
-                    if (!members.hasOwnProperty(name)) {
+                for (var name_2 in members) {
+                    if (!members.hasOwnProperty(name_2)) {
                         continue;
                     }
-                    var member = members[name];
-                    var newMember = member.clone(value, name);
-                    newMembers[name] = newMember;
-                    var aname = Model.chromeKeywords[name] || name.toString();
+                    var member = members[name_2];
+                    var newMember = member.clone(value, name_2);
+                    newMembers[name_2] = newMember;
+                    var aname = Model.chromeKeywords[name_2] || name_2.toString();
                     newAccessor[aname] = newMember.$accessor;
                 }
             }
@@ -1781,7 +1781,7 @@ var Y;
         function ABindContext(root, element, controller) {
             this.$self = this.$root = root.$accessor;
             this._element = element;
-            this._binders = binders;
+            this._binders = Y.binders;
             this._controller = controller;
             this._scopes = [];
         }
@@ -2012,7 +2012,7 @@ var Y;
         }
         var eachAttr;
         var scopeAttr;
-        for (var n in binders) {
+        for (var n in Y.binders) {
             var attr = element.getAttribute(n);
             if (!attr)
                 continue;
@@ -2215,51 +2215,110 @@ var Y;
         function BindContext() {
         }
         BindContext.prototype.getFunc = function (name) { return null; };
+        BindContext.prototype.label = function (key) { return key; };
+        BindContext.prototype.getBinder = function (name) {
+            return this.local_binders[name] || this.global_binders[name];
+        };
         return BindContext;
     }());
     Y.BindContext = BindContext;
-    //<input y-value="date($Name,yyyy-MM-dd)" y-disable="contains($Permission,$ROOT.Check,startTime)" />
-    // ->>  context.binders.value(
-    //          context.element,
-    //          new BindDependences([context.$self.Name],function(){return context.getFunc("date")(this.deps[0](),"yyyy-MM-dd");}),
-    //      );
-    //
-    //<select y-value="$MySelect"  />
-    // ->>  context.binders.value(
-    //          context.element,
-    //          new BindDependences(context.$self.MySelect)
-    //      );
-    //
-    //<label>#username#</label>:<span>Hi,{{Username}},</span>
-    // context.label(context.element,"username");
-    // context.binders.text(
-    //  context.element,
-    //  new BindDependences([context.$self.Username],function(){return "Hi," + this.deps[0]() + ",";})
-    //)
-    //<button y-click="onsubmit">
-    //<div y-controller='user,http://pro.com/user'></div> none
-    //<div y-text='(price:$.Price,qty:Quanity)=>price*qty'></div>
+    function parseElement(context, element, expressions) {
+        if (element.nodeType == 3) {
+            var embededExpr = ComputedExpression.embeded(element.nodeValue);
+            if (embededExpr)
+                expressions.push(new BindExpression("y-text", embededExpr));
+            return;
+        }
+        var each;
+        var controller;
+        var scope;
+        var ui;
+        var attrs = element.attributes;
+        for (var i = 0, j = attrs.length; i < j; i++) {
+            var attr = attrs[i];
+            var attrname = attr.name;
+            var attrvalue = attr.value;
+            var binder = context.global_binders[attrname];
+            if (!binder)
+                binder = context.local_binders[attrname];
+            if (!binder)
+                continue;
+            var expr = Expression.parse(attrvalue);
+            if (!expr)
+                continue;
+            expr = new BindExpression(attrname, expr);
+            switch (attrname) {
+                case "y-each":
+                    each = expr;
+                    continue;
+                case "y-controller":
+                    controller = expr;
+                    continue;
+                case "y-scope":
+                    scope = expr;
+                    continue;
+                case "y-ui":
+                    ui = expr;
+                    continue;
+            }
+            expressions.push(expr);
+        }
+        if (!element.hasChildNodes)
+            return;
+        var nodes = element.childNodes;
+        for (var i = 0, j = nodes.length; i < j; i++) {
+            var node = nodes[i];
+            expressions.push(new ChildBeginExpression(i, element));
+            parseElement(context, node, expressions);
+            var last = expressions.pop();
+            if (last.childAt != i || last.parentNode != element) {
+                expressions.push(last);
+                expressions.push(new ChildEndExpression(i, element));
+            }
+        }
+    }
+    function makeBinder(context, element) {
+        var exprs = [];
+        parseElement(context, element, exprs);
+        while (true) {
+            var last = exprs.pop();
+            if (!last)
+                break;
+            if (last.childAt === undefined && !last.parentNode) {
+                exprs.push(last);
+                break;
+            }
+        }
+        var code = "";
+        for (var i = 0, j = exprs.length; i < j; i++) {
+            code += exprs[i].toCode(context);
+        }
+        //(this:BindContext,element:HTMLElement,bindable:IBindable):void;
+        code = "context.element = element;context.$self = bindable;\n" + code;
+        var binder = new Function("element", "bindable", "context", code);
+        return binder;
+    }
+    Y.makeBinder = makeBinder;
     var ExpressionTypes;
     (function (ExpressionTypes) {
         //固定表达式  y-controller='user,http://pro.com/user' y-click="onsubmit"
         ExpressionTypes[ExpressionTypes["constant"] = 0] = "constant";
         //模型表达式 $ROOT.Title
         ExpressionTypes[ExpressionTypes["model"] = 1] = "model";
+        //多语言化表达式
+        ExpressionTypes[ExpressionTypes["label"] = 2] = "label";
         //函数表达式  contains($Permission,$ROOT.Check,startTime)
-        ExpressionTypes[ExpressionTypes["function"] = 2] = "function";
-        //参数表达式
-        ExpressionTypes[ExpressionTypes["parameter"] = 3] = "parameter";
-        //计算表达式 (price:$.Price,qty:Quanity)=>price*qty
-        ExpressionTypes[ExpressionTypes["computed"] = 4] = "computed";
+        ExpressionTypes[ExpressionTypes["function"] = 3] = "function";
+        ExpressionTypes[ExpressionTypes["object"] = 4] = "object";
+        ExpressionTypes[ExpressionTypes["key"] = 5] = "key";
+        //计算表达式 (price:$.Price,qty:Quanity)=>price*qty;
+        ExpressionTypes[ExpressionTypes["computed"] = 6] = "computed";
         //嵌入表达式 Hi,{{$.Name}},now is {{date($.AccountingDate)}}
-        ExpressionTypes[ExpressionTypes["embeded"] = 5] = "embeded";
+        //embeded,
         //绑定
-        ExpressionTypes[ExpressionTypes["bind"] = 6] = "bind";
-        ExpressionTypes[ExpressionTypes["childBegin"] = 7] = "childBegin";
-        ExpressionTypes[ExpressionTypes["childEnd"] = 8] = "childEnd";
-        ExpressionTypes[ExpressionTypes["label"] = 9] = "label";
-        ExpressionTypes[ExpressionTypes["object"] = 10] = "object";
-        ExpressionTypes[ExpressionTypes["key"] = 11] = "key";
+        ExpressionTypes[ExpressionTypes["bind"] = 7] = "bind";
+        ExpressionTypes[ExpressionTypes["childBegin"] = 8] = "childBegin";
+        ExpressionTypes[ExpressionTypes["childEnd"] = 9] = "childEnd";
         //多个
         //url:$.url,name:mycontrol,dodo:date($.date,abc)
     })(ExpressionTypes = Y.ExpressionTypes || (Y.ExpressionTypes = {}));
@@ -2268,20 +2327,19 @@ var Y;
         }
         Expression.prototype.getDeps = function (context, deps) { throw new Error("Not implement"); };
         Expression.prototype.toCode = function (context) { return null; };
-        Expression.tryParse = function (text, opts) {
+        Expression.parse = function (text, opts) {
             var expr;
-            if (expr = ObjectExpression.tryParse(text, opts))
+            if (expr = LabelExpression.parse(text))
                 return expr;
-            ;
-            if (expr = ModelExpression.tryParse(text))
+            if (expr = ModelExpression.parse(text))
                 return expr;
-            if (expr = FunctionExpression.tryParse(text))
+            if (expr = FunctionExpression.parse(text))
                 return expr;
-            return ConstantExpression.tryParse(text, opts);
-            //if(!exp) exp = FunctionExpression.tryParse(text);
-            //if(!exp) exp = ComputedExpression.tryParse(text);
-            //if(!exp) exp = LabelExpression.tryParse(text);
-            //if(!exp) exp = new ConstantExpression(text);
+            if (expr = ObjectExpression.parse(text, opts))
+                return expr;
+            if (expr = ComputedExpression.parse(text))
+                return expr;
+            return ConstantExpression.parse(text, opts);
         };
         return Expression;
     }());
@@ -2303,13 +2361,13 @@ var Y;
                 return "undefined";
             return "\"" + toJsonString(this.value) + "\"";
         };
-        ConstantExpression.tryParse = function (text, opts) {
+        ConstantExpression.parse = function (text, opts) {
             if (!text)
                 return;
-            var result = ConstantExpression.tryParseQuote(text, "\"");
+            var result = ConstantExpression.parseQuote(text, "\"");
             if (result)
                 return result;
-            result = ConstantExpression.tryParseQuote(text, "'");
+            result = ConstantExpression.parseQuote(text, "'");
             if (result)
                 return result;
             if (ConstantExpression.strict)
@@ -2325,7 +2383,7 @@ var Y;
             }
             return new ConstantExpression(text, text.length);
         };
-        ConstantExpression.tryParseQuote = function (text, quote) {
+        ConstantExpression.parseQuote = function (text, quote) {
             if (text[0] != quote)
                 return null;
             var quoteAt = 1;
@@ -2366,23 +2424,23 @@ var Y;
             var names = this.names.split(".");
             var rs = ["$self"];
             for (var i = 0, j = names.length; i < j; i++) {
-                var name_1 = names[i].replace(Y.trimRegex, "");
-                if (!name_1)
+                var name_3 = names[i].replace(Y.trimRegex, "");
+                if (!name_3)
                     throw new Error("Invalid model path : " + names.join("."));
-                if (name_1 == "$root" || name_1 == "$") {
+                if (name_3 == "$root" || name_3 == "$") {
                     curr = curr.root();
-                    rs = ["$root"];
+                    rs = ["$self.$model.root().$accessor"];
                 }
-                else if (name_1 == "$parent") {
+                else if (name_3 == "$parent") {
                     curr = curr.container();
                     rs.push("$model.container().$accessor");
                 }
-                else if ("$self") {
+                else if (name_3 == "$self") {
                     curr = curr;
                 }
                 else {
-                    curr = curr.prop(name_1, {});
-                    rs.push(name_1);
+                    curr = curr.prop(name_3, {});
+                    rs.push(name_3);
                 }
             }
             return this._path = rs.join(".");
@@ -2393,9 +2451,9 @@ var Y;
             return deps;
         };
         ModelExpression.prototype.toCode = function (context) {
-            return "context." + this.getPath(context) + ".$model";
+            return this.getPath(context) + ".$model";
         };
-        ModelExpression.tryParse = function (text) {
+        ModelExpression.parse = function (text, opts) {
             if (!text)
                 return null;
             var matches = text.match(ModelExpression.patten);
@@ -2411,6 +2469,28 @@ var Y;
     }(Expression));
     ModelExpression.patten = /^\s*\$(?:[a-zA-Z][a-zA-Z0-9_\$]*)?(?:\s*\.[a-zA-Z_\$][a-zA-Z0-9_\$]*)*\s*/i;
     Y.ModelExpression = ModelExpression;
+    var LabelExpression = (function (_super) {
+        __extends(LabelExpression, _super);
+        function LabelExpression(key, len) {
+            var _this = _super.call(this) || this;
+            _this.type = ExpressionTypes.label;
+            _this.key = key;
+            _this.matchLength = len;
+            return _this;
+        }
+        LabelExpression.prototype.getDeps = function (context, deps) { return null; };
+        LabelExpression.prototype.toCode = function (context) {
+            return "context.label(\"" + this.key + "\")";
+        };
+        LabelExpression.parse = function (text, opts) {
+            var matches = text.match(LabelExpression.patten);
+            if (matches)
+                return new LabelExpression(matches[1], matches[0].length);
+        };
+        return LabelExpression;
+    }(Expression));
+    LabelExpression.patten = /^#([^#]+)#/i;
+    Y.LabelExpression = LabelExpression;
     var FunctionExpression = (function (_super) {
         __extends(FunctionExpression, _super);
         function FunctionExpression(name, args, len) {
@@ -2431,7 +2511,7 @@ var Y;
                 return deps;
             return null;
         };
-        FunctionExpression.tryParse = function (text) {
+        FunctionExpression.parse = function (text, opts) {
             if (!text)
                 return null;
             var matches = text.match(FunctionExpression.patten);
@@ -2441,8 +2521,12 @@ var Y;
             var len = matches[0].length;
             text = text.substr(len);
             var args = [];
+            if (text[0] == ")") {
+                len++;
+                return new FunctionExpression(fnname, args, len);
+            }
             while (true) {
-                var arg = Expression.tryParse(text, { constantEndPatten: /[,\)]/i, objectBrackets: true });
+                var arg = Expression.parse(text, { constantEndPatten: /[,\)]/i, objectBrackets: true });
                 if (arg) {
                     args.push(arg);
                     text = text.substr(arg.matchLength);
@@ -2476,222 +2560,6 @@ var Y;
     }(Expression));
     FunctionExpression.patten = /^\s*([a-zA-Z_][a-zA-Z0-9_\$]*)\s*\(\s*/i;
     Y.FunctionExpression = FunctionExpression;
-    var ChildBeginExpression = (function (_super) {
-        __extends(ChildBeginExpression, _super);
-        function ChildBeginExpression(at) {
-            var _this = _super.call(this) || this;
-            _this.type = ExpressionTypes.childBegin;
-            _this.at = at;
-            return _this;
-        }
-        ChildBeginExpression.prototype.getDeps = function (context, deps) { return null; };
-        ChildBeginExpression.prototype.toCode = function (context) {
-            return "context.element = context.element.childNodes[" + this.at + "];\n";
-        };
-        return ChildBeginExpression;
-    }(Expression));
-    Y.ChildBeginExpression = ChildBeginExpression;
-    var ChildEndExpression = (function (_super) {
-        __extends(ChildEndExpression, _super);
-        function ChildEndExpression(at) {
-            var _this = _super.call(this) || this;
-            _this.type = ExpressionTypes.childEnd;
-            _this.at = at;
-            return _this;
-        }
-        ChildEndExpression.prototype.getDeps = function (context, deps) { return null; };
-        ChildEndExpression.prototype.toCode = function (context) {
-            return "context.element = context.element.parentNode;\n";
-        };
-        return ChildEndExpression;
-    }(Expression));
-    Y.ChildEndExpression = ChildEndExpression;
-    var LabelExpression = (function (_super) {
-        __extends(LabelExpression, _super);
-        function LabelExpression(key) {
-            var _this = _super.call(this) || this;
-            _this.type = ExpressionTypes.childEnd;
-            _this.key = key;
-            return _this;
-        }
-        LabelExpression.prototype.getDeps = function (context, deps) { return null; };
-        LabelExpression.prototype.toCode = function (context) {
-            return "context.label(\"" + this.key + "\")";
-        };
-        LabelExpression.tryParse = function (text) {
-            var matches = text.match(LabelExpression.patten);
-            if (matches)
-                return new LabelExpression(matches[1]);
-        };
-        return LabelExpression;
-    }(Expression));
-    LabelExpression.patten = /^#([^#]+)#$/i;
-    Y.LabelExpression = LabelExpression;
-    var BindExpression = (function (_super) {
-        __extends(BindExpression, _super);
-        function BindExpression(name, expr) {
-            var _this = _super.call(this) || this;
-            _this.type = ExpressionTypes.bind;
-            _this.bindername = name;
-            _this.expression = expr;
-            return _this;
-        }
-        BindExpression.prototype.getDeps = function (context, deps) { return this.expression.getDeps(context, deps); };
-        BindExpression.prototype.toCode = function (context) {
-            switch (this.expression.type) {
-                case ExpressionTypes.model: return this.toModelCode(context);
-                case ExpressionTypes.constant: return this.toConstantCode(context);
-                case ExpressionTypes["function"]: return this.toFuncCode(context);
-                case ExpressionTypes.computed: return this.toComputeCode(context);
-                case ExpressionTypes.label: return this.toLabelCode(context);
-                default: throw new Error("Not implement");
-            }
-        };
-        BindExpression.prototype.toModelCode = function (context) {
-            //binders.value.call(context,context.element, context.$self.Username.$model);
-            return "context.binders." + this.bindername + ".call(context,context." + this.expression.toCode(context) + ".$model);\n";
-        };
-        BindExpression.prototype.toFuncCode = function (context) {
-            var deps = this.getDeps(context).join(",");
-            return "context.binders." + this.bindername + ".call(context,new Y.BindDependences([" + deps + "]," + this.expression.toCode(context) + "));\n";
-        };
-        BindExpression.prototype.toConstantCode = function (context) {
-            return "context.binders." + this.bindername + ".call(context,new Y.ConstantBindableObject(" + this.expression.toCode(context) + "));\n";
-        };
-        BindExpression.prototype.toComputeCode = function (context) {
-            var deps = this.getDeps(context).join(",");
-            return "context.binders." + this.bindername + ".call(context,new Y.BindDependences([" + deps + "]," + this.expression.toCode(context) + "));\n";
-        };
-        BindExpression.prototype.toLabelCode = function (context) {
-            return "context.innerHTML = " + this.expression.toCode(context) + ";\n";
-        };
-        return BindExpression;
-    }(Expression));
-    Y.BindExpression = BindExpression;
-    var ParameterExpression = (function (_super) {
-        __extends(ParameterExpression, _super);
-        function ParameterExpression(name, expr) {
-            var _this = _super.call(this) || this;
-            _this.type = ExpressionTypes.parameter;
-            _this.name = name;
-            _this.expression = expr;
-            return _this;
-        }
-        ParameterExpression.prototype.getDeps = function (context, deps) {
-            return this.expression.getDeps(context, deps);
-        };
-        ParameterExpression.tryParse = function (text) {
-            if (!text)
-                return null;
-            var pair = text.split(":");
-            if (pair.length != 2)
-                return null;
-            return new ParameterExpression(pair[0], Expression.tryParse(pair[1]));
-        };
-        return ParameterExpression;
-    }(Expression));
-    Y.ParameterExpression = ParameterExpression;
-    var ComputedExpression = (function (_super) {
-        __extends(ComputedExpression, _super);
-        function ComputedExpression(parameters, code) {
-            var _this = _super.call(this) || this;
-            _this.type = ExpressionTypes.computed;
-            _this.parameters = parameters;
-            _this.code = code;
-            return _this;
-        }
-        ComputedExpression.prototype.getFunc = function () {
-            if (this._func)
-                return this._func;
-            var code = "return function(";
-            for (var i = 0, j = this.parameters.length; i < j; i++) {
-                if (i != 0)
-                    code += ",";
-                code += this.parameters[i].name;
-            }
-            code = "){" + this.code + "};";
-            var fn = new Function(code);
-            this._func = fn();
-        };
-        ComputedExpression.prototype.toCode = function (context) {
-            var pars = "";
-            var args = "";
-            for (var i = 0, j = this.parameters.length; i < j; i++) {
-                if (i != 0) {
-                    args += ",";
-                    pars += ",";
-                }
-                pars += this.parameters[i].name;
-                args += this.parameters[i].expression.toCode(context);
-            }
-            return "(function(" + pars + "){return " + this.code + ";})(" + args + ")";
-        };
-        ComputedExpression.prototype.getDeps = function (context, deps) {
-            deps || (deps = []);
-            var c = deps.length;
-            for (var i = 0, j = this.parameters.length; i < j; i++) {
-                this.parameters[i].getDeps(context, deps);
-            }
-            if (c < deps.length)
-                return deps;
-            return null;
-        };
-        ComputedExpression.tryParse = function (text) {
-            var arrowAt = text.indexOf("=>");
-            if (arrowAt < 0)
-                return null;
-            var parText = text.substr(0, arrowAt).replace(/(?:^\s*\()|(?:\)\s*$)/i, "");
-            var parExps = [];
-            if (parText) {
-                var pars = parText.split(",");
-                for (var i = 0, j = pars.length; i < j; i++) {
-                    var exp = ParameterExpression.tryParse(pars[i]);
-                    if (exp)
-                        parExps.push(exp);
-                    else {
-                        var err = new Error(text + " 不是正确的计算表达式:" + pars[i] + "不能识别为参数");
-                        Y.logger.error(err, "/y/Expression/computed");
-                    }
-                }
-            }
-            var code = text.substr(arrowAt + 2);
-            return new ComputedExpression(parExps, code);
-        };
-        ComputedExpression.TryParseEmbeded = function (text) {
-            var pars = [];
-            var code = "";
-            var at = 0;
-            var lastAt = 0;
-            while (true) {
-                var startAt = at = text.indexOf("{{", at);
-                if (startAt < 0)
-                    break;
-                var endAt = at = text.indexOf("}}", at);
-                if (endAt < 0)
-                    break;
-                var exptext = text.substring(startAt + 2, endAt).replace(Y.trimRegex, "");
-                if (!exptext)
-                    continue;
-                var exp = Expression.tryParse(exptext);
-                if (exp.type === ExpressionTypes.constant)
-                    continue;
-                var ctext = toJsonString(text.substring(lastAt, startAt));
-                var argname = "__y_EMBEDED_ARGS_" + pars.length;
-                code += "\"" + ctext + "\" + " + argname;
-                pars.push(new ParameterExpression(argname, exp));
-                lastAt = at + 2;
-            }
-            if (lastAt > 0) {
-                var ctext = toJsonString(text.substring(lastAt));
-                var argname = "__y_EMBEDED_ARGS_" + pars.length;
-                code += "\"" + ctext + "\";";
-            }
-            if (pars.length)
-                return new ComputedExpression(pars, code);
-        };
-        return ComputedExpression;
-    }(Expression));
-    Y.ComputedExpression = ComputedExpression;
     var KeyExpression = (function (_super) {
         __extends(KeyExpression, _super);
         function KeyExpression(key, len) {
@@ -2705,7 +2573,7 @@ var Y;
         KeyExpression.prototype.toCode = function (context) {
             return null;
         };
-        KeyExpression.tryParse = function (text) {
+        KeyExpression.parse = function (text) {
             var matches = text.match(KeyExpression.patten);
             return matches ? new KeyExpression(matches[1], matches[0].length) : null;
         };
@@ -2726,7 +2594,7 @@ var Y;
         ObjectExpression.prototype.toCode = function (context) {
             return null;
         };
-        ObjectExpression.tryParse = function (text, opts) {
+        ObjectExpression.parse = function (text, opts) {
             if (!text)
                 return null;
             var len = 0;
@@ -2769,7 +2637,7 @@ var Y;
             }
             var obj;
             while (true) {
-                var keyExpr = KeyExpression.tryParse(text);
+                var keyExpr = KeyExpression.parse(text);
                 if (!keyExpr) {
                     if (needBrackets)
                         throw new Error("不正确的Object表达式,无法分析出key:" + text);
@@ -2779,7 +2647,7 @@ var Y;
                 len += keyExpr.matchLength;
                 if (!text)
                     break;
-                var valueExpr = Expression.tryParse(text, { constantEndPatten: constEndPatten, objectBrackets: true });
+                var valueExpr = Expression.parse(text, { constantEndPatten: constEndPatten, objectBrackets: true });
                 if (!valueExpr)
                     break;
                 (obj || (obj = {}))[keyExpr.key] = valueExpr;
@@ -2802,7 +2670,190 @@ var Y;
         return ObjectExpression;
     }(Expression));
     Y.ObjectExpression = ObjectExpression;
-    var binders = {
+    var ComputedExpression = (function (_super) {
+        __extends(ComputedExpression, _super);
+        function ComputedExpression(parameters, code, len) {
+            var _this = _super.call(this) || this;
+            _this.type = ExpressionTypes.computed;
+            _this.parameters = parameters;
+            _this.code = code;
+            _this.matchLength = len;
+            return _this;
+        }
+        ComputedExpression.prototype.toCode = function (context) {
+            var args = "";
+            var parnames = "";
+            var pars = this.parameters;
+            var at = 0;
+            for (var n in pars) {
+                if (at != 0) {
+                    args += ",";
+                    parnames += ",";
+                }
+                args += pars[n].toCode(context);
+            }
+            return "(function(" + parnames + "){return " + this.code + "})(" + args + ")";
+        };
+        ComputedExpression.prototype.getDeps = function (context, deps) {
+            deps || (deps = []);
+            var c = deps.length;
+            var pars = this.parameters;
+            for (var n in pars) {
+                pars[n].getDeps(context, deps);
+            }
+            if (c < deps.length)
+                return deps;
+            return null;
+        };
+        ComputedExpression.parse = function (text, opts) {
+            var paramExpr = ObjectExpression.parse(text, { objectBrackets: ["\\(", "\\)"] });
+            if (!paramExpr)
+                return null;
+            var len = paramExpr.matchLength;
+            text = text.substr(len);
+            var matches = text.match(ComputedExpression.patten);
+            if (!matches)
+                return;
+            len += matches[0].length;
+            text = text.substr(matches[0].length);
+            var semiAt = text.indexOf(";");
+            if (semiAt < 0)
+                return null;
+            len += semiAt;
+            var code = text.substr(0, semiAt);
+            return new ComputedExpression(paramExpr.members, code, len);
+            //ObjectExpression.parse();
+        };
+        ComputedExpression.embeded = function (text) {
+            var pars = {};
+            var code = "";
+            var at = 0;
+            var lastAt = 0;
+            var parCount = 0;
+            while (true) {
+                var startAt = at = text.indexOf("{{", at);
+                if (startAt < 0)
+                    break;
+                var endAt = at = text.indexOf("}}", at);
+                if (endAt < 0)
+                    break;
+                var exptext = text.substring(startAt + 2, endAt).replace(Y.trimRegex, "");
+                if (!exptext)
+                    continue;
+                var exp = Expression.parse(exptext);
+                if (!exp || exp.type === ExpressionTypes.constant)
+                    continue;
+                var ctext = toJsonString(text.substring(lastAt, startAt));
+                var argname = "__y_EMBEDED_ARGS_" + parCount++;
+                code += "\"" + ctext + "\" + " + argname;
+                pars[argname] = exp;
+                lastAt = at + 2;
+            }
+            if (lastAt > 0) {
+                var ctext = toJsonString(text.substring(lastAt));
+                code += "\"" + ctext + "\";";
+            }
+            if (parCount > 0)
+                return new ComputedExpression(pars, code, text.length);
+            return null;
+            //if(pars.length) return new ComputedExpression(pars,code);
+        };
+        return ComputedExpression;
+    }(Expression));
+    ComputedExpression.patten = /^\s*=>\s*/;
+    Y.ComputedExpression = ComputedExpression;
+    var BindExpression = (function (_super) {
+        __extends(BindExpression, _super);
+        function BindExpression(name, expr) {
+            var _this = _super.call(this) || this;
+            _this.type = ExpressionTypes.bind;
+            _this.bindername = name;
+            _this.expression = expr;
+            return _this;
+        }
+        BindExpression.prototype.getDeps = function (context, deps) { return this.expression.getDeps(context, deps); };
+        BindExpression.prototype.toCode = function (context) {
+            switch (this.expression.type) {
+                case ExpressionTypes.model: return this.toModelCode(context);
+                case ExpressionTypes.constant: return this.toConstantCode(context);
+                case ExpressionTypes["function"]: return this.toFuncCode(context);
+                case ExpressionTypes.computed: return this.toComputedCode(context);
+                case ExpressionTypes.label: return this.toLabelCode(context);
+                case ExpressionTypes.object: return this.toLabelCode(context);
+                default: throw new Error("Not implement");
+            }
+        };
+        BindExpression.prototype.toLabelCode = function (context) {
+            return "context.element.innerHTML = " + this.expression.toCode(context) + ";\n";
+        };
+        BindExpression.prototype.toModelCode = function (context) {
+            //binders.value.call(context,context.element, context.$self.Username.$model);
+            return "context.getBinder(\"" + this.bindername + "\").call(context,context.element,context." + this.expression.toCode(context) + ",context);\n";
+        };
+        BindExpression.prototype.toConstantCode = function (context) {
+            return "context.binders[" + this.bindername + "].call(context,context.element,new Y.ConstantBindableObject(" + this.expression.toCode(context) + "),context);\n";
+        };
+        BindExpression.prototype.toFuncCode = function (context) {
+            var deps = this.getDeps(context).join(",");
+            return "context.binders[" + this.bindername + "].call(context,context.element,new Y.BindDependences([" + deps + "],function(){ return " + this.expression.toCode(context) + "}),context);\n";
+        };
+        BindExpression.prototype.toComputedCode = function (context) {
+            var deps = this.getDeps(context).join(",");
+            return "context.binders." + this.bindername + ".call(context,context.element,new Y.BindDependences([" + deps + "],function(){ return " + this.expression.toCode(context) + "}));\n";
+        };
+        BindExpression.prototype.toObjectCode = function (context) {
+            var deps = this.getDeps(context).join(",");
+            return "context.binders." + this.bindername + ".call(context,new Y.BindDependences([" + deps + "],function(){ return " + this.expression.toCode(context) + "}));\n";
+        };
+        return BindExpression;
+    }(Expression));
+    Y.BindExpression = BindExpression;
+    var ChildBeginExpression = (function (_super) {
+        __extends(ChildBeginExpression, _super);
+        function ChildBeginExpression(at, parent) {
+            var _this = _super.call(this) || this;
+            _this.type = ExpressionTypes.childBegin;
+            _this.childAt = at;
+            _this.parentNode = parent;
+            return _this;
+        }
+        ChildBeginExpression.prototype.getDeps = function (context, deps) { return null; };
+        ChildBeginExpression.prototype.toCode = function (context) {
+            return "context.element = context.element.childNodes[" + this.childAt + "];\n";
+        };
+        return ChildBeginExpression;
+    }(Expression));
+    Y.ChildBeginExpression = ChildBeginExpression;
+    var ChildEndExpression = (function (_super) {
+        __extends(ChildEndExpression, _super);
+        function ChildEndExpression(at, parent) {
+            var _this = _super.call(this) || this;
+            _this.childAt = at;
+            _this.parentNode = parent;
+            return _this;
+        }
+        ChildEndExpression.prototype.getDeps = function (context, deps) { return null; };
+        ChildEndExpression.prototype.toCode = function (context) {
+            return "context.element = context.element.parentNode;\n";
+        };
+        return ChildEndExpression;
+    }(Expression));
+    Y.ChildEndExpression = ChildEndExpression;
+    Y._binders = {};
+    Y._binders["y-text"] = function (element, bindable, context) {
+        bindable.subscribe(function (sender, evt) {
+            element.innerHTML = evt.value;
+        });
+    };
+    Y._binders["y-value"] = function (element, bindable, context) {
+        bindable.subscribe(function (sender, evt) {
+            element.value = evt.value;
+        });
+        Y.platform.attach(element, "blur", function () {
+            bindable.setValue(element.value);
+        });
+    };
+    Y.binders = {
         "bibound.text": function (element, accessor) {
             var handler = function (sender, evt) { element.innerHTML = evt.value; };
             accessor.subscribe(handler);
@@ -2967,7 +3018,7 @@ var Y;
             return function () { accessor.unsubscribe(handler); };
         }
     };
-    var uniBinder = binders["unibound"] = function (element, accessor, controller, extra) {
+    var uniBinder = Y.binders["unibound"] = function (element, accessor, controller, extra) {
         var setValue;
         if (element.tagName == "SELECT") {
             setValue = function (element, value) {
@@ -2999,7 +3050,7 @@ var Y;
         }
         return EachItemBindInfo;
     }());
-    var eachBinder = binders["each"] = function (element, accessor, extra) {
+    var eachBinder = Y.binders["each"] = function (element, accessor, extra) {
         var controller = extra;
         var model = accessor.$model;
         var eachId = element.getAttribute("y-each-view-id");
