@@ -37,7 +37,24 @@
       //Y.Module.loadResource("css/my.css").done(function(elem){
       //  alert(elem);
       //});
-      var uri = new Y.Uri("interests","/mysite");
+      //var uri = new Y.Uri("interests","/mysite");
+
+      //单个属性object
+      var text = "url:http://mydomain.com";
+      var expr = Y.Expression.tryParse(text);
+      //多个属性object
+      var text = "url:http://mydomain.com , name:userController";
+      var expr = Y.Expression.tryParse(text);
+      //带括号
+      var text = "{url:http://mydomain.com , name:userController}";
+      var expr = Y.Expression.tryParse(text);
+
+      //递归
+      var text = "{user:{id:1,name:yiy} , name:userController}";
+      var expr = Y.Expression.tryParse(text);
+
+      var text = "role:$.myrole,site : $parent.site";
+      var expr = Y.Expression.tryParse(text);
     </script>
   </body>
 </html>

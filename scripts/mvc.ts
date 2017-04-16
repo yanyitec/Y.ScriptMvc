@@ -768,21 +768,7 @@ export namespace Y {
             if(/(?:.jpg$)|(?:.png$)|(?:.bmp$)|(?:.gif$)/i.test(url)) return ModuleTypes.image;
             return undefined;
         }
-        resolveUrl(url:string){
-            
-        }
-        static parentPath(path:string){
-            let at = path.lastIndexOf("/");
-            //my.html => ''
-            if(at<0) return "";
-            // /my.html => /
-            if(at==0) return "/";
-            // http://mydomain.com
-            if(path[at-1]==="/" && path[at-2]===":") return path + "/";
-            // /user/my.html => /user/
-            return path.substring(0,at);
-        }
-
+         
         
 
         private _combineModuleOpts(dest:ModuleOpts,src?:ModuleOpts):ModuleOpts{
@@ -1145,7 +1131,7 @@ export namespace Y {
         static controller:IController;
     }
 
-    platform.attach(window,"load",function(){
+    platform.attach(window,"aload",function(){
         let rootOpts :ModuleOpts={url:location.href,alias:"$root",value : window};
         
         
@@ -2237,38 +2223,214 @@ export namespace Y {
     export enum ExpressionTypes{
         //固定表达式  y-controller='user,http://pro.com/user' y-click="onsubmit"
         constant,
-        //参数表达式
-        parameter,
+        //模型表达式 $ROOT.Title
+        model,
         //函数表达式  contains($Permission,$ROOT.Check,startTime)
         function,
+        //参数表达式
+        parameter,
+        
         //计算表达式 (price:$.Price,qty:Quanity)=>price*qty
         computed,
         //嵌入表达式 Hi,{{$.Name}},now is {{date($.AccountingDate)}}
         embeded,
-        //模型表达式 $ROOT.Title
-        model,
+        
         //绑定
         bind,
         childBegin,
         childEnd,
-        label
+        label,
+        object,
+        key
+        //多个
+        //url:$.url,name:mycontrol,dodo:date($.date,abc)
         
 
     }
+    export interface ParseExpressionOpts{
+        //对象表达式是否必须要有{}
+        objectBrackets?:boolean;
+        //固定值的结束标记
+        constantEndPatten?:RegExp;
+    }
     export class Expression{
         type:ExpressionTypes;   
-        index:number; 
+        matchLength:number; 
         getDeps(context:BindContext,deps?:string[]):string[]{throw new Error("Not implement");}
         
         toCode(context:BindContext):string{return null;}
-        static tryParse(text:string):Expression{
-            let exp :Expression = ModelExpression.tryParse(text);
-            if(!exp) exp = FunctionExpression.tryParse(text);
-            if(!exp) exp = ComputedExpression.tryParse(text);
-            if(!exp) exp = LabelExpression.tryParse(text);
-            if(!exp) exp = new ConstantExpression(text);
-            return exp;
+        static tryParse(text:string,opts?:ParseExpressionOpts):Expression{
+            let expr :Expression;
+            
+            if( expr = ObjectExpression.tryParse(text,opts)) return expr;;
+            if(expr = ModelExpression.tryParse(text)) return expr;
+            return ConstantExpression.tryParse(text,opts);
+            //if(!exp) exp = FunctionExpression.tryParse(text);
+            //if(!exp) exp = ComputedExpression.tryParse(text);
+            //if(!exp) exp = LabelExpression.tryParse(text);
+            //if(!exp) exp = new ConstantExpression(text);
         }    
+    }
+    export class ConstantExpression extends Expression{
+        value:string;
+        endWith:string;
+        constructor(value:string,len:number){
+            super();
+            this.type = ExpressionTypes.constant;
+            this.value = value;
+            this.matchLength = len;
+        }
+        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
+
+        toCode(context:BindContext):string{
+            if(this.value===null) return "null";
+            if(this.value===undefined) return "undefined";
+            return  "\"" + toJsonString(this.value) + "\"";
+        } 
+        static strict:boolean = false;
+        
+        static tryParse(text:string , opts?:ParseExpressionOpts):ConstantExpression{
+            if(!text) return;
+            let result  = ConstantExpression.tryParseQuote(text,"\"");
+            if(result) return result;
+            result  = ConstantExpression.tryParseQuote(text,"'");
+            if(result) return result;
+            if(ConstantExpression.strict) return null;
+            if(opts && opts.constantEndPatten) {
+                let endPatten = opts.constantEndPatten;
+                let matches = text.match(endPatten);
+                if(matches) {
+                    result = new ConstantExpression(text.substr(0,matches.index),matches.index + matches[0].length);
+                    result.endWith = matches[0];
+                    return result;
+                }//else return null;
+            }
+            return new ConstantExpression(text,text.length);
+            
+        }
+        static tryParseQuote(text:string,quote:string){
+            if(text[0]!=quote) return null;
+            let quoteAt = 1;
+            while(true){
+                quoteAt = text.indexOf(quote,quoteAt);
+                if(quoteAt>=1){
+                    if(text[quoteAt-1]=="\\"){quoteAt++;continue;}
+                    else{
+                        let constValue = text.substring(1,quoteAt-1);
+                        let result = new ConstantExpression(constValue,quoteAt);
+                        result.endWith = quote;
+                        return result;
+                    }
+                }else return null;
+            }
+        }
+    }
+    export class ModelExpression extends Expression{
+        names:string;
+        constructor(names:string){
+            super();
+            this.type = ExpressionTypes.model;
+            this.names =names;
+        }
+        _path:string;
+        getPath(context:BindContext):string{
+            if(this._path) return this._path;
+            let curr = context.$self.$model;
+            let names = this.names.split(".");
+            let rs :string[]=["$self"];
+            for(let i=0,j=names.length;i<j;i++){
+                let name = names[i].replace(trimRegex,"");
+                if(!name) throw new Error("Invalid model path : " + names.join("."));
+                if(name=="$root" || name=="$"){
+                    curr = curr.root();
+                    rs = ["$root"];
+                }else if(name=="$parent"){
+                    curr= curr.container();
+                    rs.push("$model.container().$accessor")
+                }else if("$self"){
+                    curr = curr;
+                }else{
+                    curr = curr.prop(name,{});
+                    rs.push(name);
+                } 
+            }
+            return this._path = rs.join(".");
+            
+        }
+        getDeps(context:BindContext,deps?:string[]):string[]{
+            deps||(deps=[]);
+            deps.push(this.getPath(context));
+            return deps;
+        }
+
+        toCode(context:BindContext):string{
+            return "context." + this.getPath(context) + ".$model";
+        } 
+        static patten:RegExp = /^\s*\$(?:[a-zA-Z][a-zA-Z0-9_\$]*)?(?:\s*\.[a-zA-Z_\$][a-zA-Z0-9_\$]*)*\s*/i;
+        static tryParse(text:string):ModelExpression{
+            if(!text) return null;
+            let matches = text.match(ModelExpression.patten);
+            if(matches){
+                let path = matches[0];
+                let result:ModelExpression = new ModelExpression(path);
+                result.matchLength = path.length;
+                return result;
+            } 
+            return null;
+        }
+    }
+    export class FunctionExpression extends Expression{
+        arguments:Expression[];
+        funname:string;
+        constructor(name:string,args:Expression[]){
+            super();
+            this.type = ExpressionTypes.function;
+            this.arguments = args;
+            this.funname = name;
+        }
+
+        getDeps(context:BindContext,deps?:string[]):string[]{
+            deps||(deps=[]);
+            let c = deps.length;
+            for(let i=0,j=this.arguments.length;i<j;i++){
+                this.arguments[i].getDeps(context,deps);
+            }
+            if(c<deps.length)return deps;
+            return null;
+        }
+        static patten :RegExp = /^\s*([a-zA-Z_][a-zA-Z0-9_\$])\s*\(\s*/i;
+        static tryParse(text:string):FunctionExpression{
+            if(!text)return null;
+            let matches = text.match(FunctionExpression.patten);
+            if(!matches)return null;
+
+            let fnname = matches[1];
+            let len :number=matches[0].length;
+            text = text.substr(len);
+            let args:Expression[] =[];
+            while(true){
+                let arg = Expression.tryParse(text,/\)/i);
+                if(arg===null)break;
+                if(arg.type === ExpressionTypes.constant){
+                    if((<ConstantExpression>arg).endWith!=")") return null;
+                    args.push(arg);
+                    len += arg.matchLength;
+                    break;
+                }
+                args.push(arg);
+                len+= arg.matchLength;
+            }
+            let end = text[len];
+            //if(end===")")
+        }
+        toCode(context:BindContext):string{
+            let code:string = "context.getFunc(\"" + this.funname + "\")(";
+            for(let i=0,j=this.arguments.length;i<j;i++){
+                code += this.arguments[i].toCode(context);
+                if(i!=0) code+= ",";
+            }
+            return code += ")";
+        } 
     }
     export class ChildBeginExpression extends Expression{
         at:number;
@@ -2310,6 +2472,7 @@ export namespace Y {
         }
         static patten :RegExp = /^#([^#]+)#$/i;
         static tryParse(text:string):LabelExpression{
+            
             let matches = text.match(LabelExpression.patten);
             if(matches) return new LabelExpression(matches[1]);
         }
@@ -2354,68 +2517,8 @@ export namespace Y {
             return `context.innerHTML = ` +this.expression.toCode(context) + ";\n";
         }
     }
-    export class ConstantExpression extends Expression{
-        value:string;
-        constructor(value:string){
-            super();
-            this.type = ExpressionTypes.constant;
-            this.value = value;
-        }
-        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
-
-        toCode(context:BindContext):string{
-            if(this.value===null) return "null";
-            if(this.value===undefined) return "undefined";
-            return  "\"" + toJsonString(this.value) + "\"";
-        } 
-        
-    }
-    export class ModelExpression extends Expression{
-        names:string[];
-        constructor(names:string[]){
-            super();
-            this.type = ExpressionTypes.model;
-            this.names =names;
-        }
-        _path:string;
-        getPath(context:BindContext):string{
-            if(this._path) return this._path;
-            let curr = context.$self.$model;
-            let names = this.names;
-            let rs :string[]=["$self"];
-            for(let i=0,j=names.length;i<j;i++){
-                let name = names[i];
-                if(name=="$root"){
-                    curr = curr.root();
-                    rs = ["$root"];
-                }else if(name=="$parent"){
-                    curr= curr.container();
-                    rs.push("$model.container().$accessor")
-                }else if("$self"){
-                    curr = curr;
-                }else{
-                    curr = curr.prop(name,{});
-                    rs.push(name);
-                } 
-            }
-            return this._path = rs.join(".");
-            
-        }
-        getDeps(context:BindContext,deps?:string[]):string[]{
-            deps||(deps=[]);
-            deps.push(this.getPath(context));
-            return deps;
-        }
-
-        toCode(context:BindContext):string{
-            return "context." + this.getPath(context) + ".$model";
-        } 
-        static patten:RegExp = /^\$[a-zA-Z][a-zA-Z0-9_\$]*(?:\.[a-zA-Z\$][a-zA-Z0-9_\$]*)*$/i;
-        static tryParse(text:string):ModelExpression{
-            if(ModelExpression.patten.exec(text)) return new ModelExpression(text.split("."));
-            return null;
-        }
-    }
+    
+    
     export class ParameterExpression extends Expression{
         name:string;
         expression:Expression;
@@ -2524,57 +2627,89 @@ export namespace Y {
 
         }
     }
-    export class FunctionExpression extends Expression{
-        arguments:Expression[];
-        funname:string;
-        static patten:RegExp = /^([a-zA-Z_][A-zA-Z_\$0-9]*)\(([a-zA-Z0-9\.\$,]*)\)$/i;
-        constructor(name:string,args:Expression[]){
+    
+
+    export class KeyExpression extends Expression{
+        key:string;
+        constructor(key:string,len:number){
             super();
-            this.type = ExpressionTypes.function;
-            this.arguments = args;
-            this.funname = name;
+            this.type = ExpressionTypes.constant;
+            this.key = key;
+            this.matchLength = len;
         }
+        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
 
-        getDeps(context:BindContext,deps?:string[]):string[]{
-            deps||(deps=[]);
-            let c = deps.length;
-            for(let i=0,j=this.arguments.length;i<j;i++){
-                this.arguments[i].getDeps(context,deps);
-            }
-            if(c<deps.length)return deps;
+        toCode(context:BindContext):string{
             return null;
+        } 
+        static patten:RegExp=/^(?:\s*,)?\s*([a-zA-Z_][a-zA-Z0-9_\$]*)\s*:\s*/i;
+        static tryParse(text:string):KeyExpression{
+            let matches = text.match(KeyExpression.patten);
+            return matches?new KeyExpression(matches[1],matches[0].length):null;
         }
+    }
 
-        static tryParse(text:string):FunctionExpression{
-            if(!text)return null;
-            let matches = text.match(FunctionExpression.patten);
-            if(!matches)return null;
+    export class ObjectExpression extends Expression{
+        members:{[index:string]:Expression}
+        constructor(members:{[index:string]:Expression},matchLength:number){
+            super();
+            this.type = ExpressionTypes.object;
+            this.members = members;
+            this.matchLength = matchLength;
+        }
+        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
 
-            let fnname = matches[1].replace(trimRegex,"");
-            if(!fnname){
-                let err = new Error(text +" 不是正确的函数表达式:不能识别出函数名");
-                Y.logger.error(err,"/y/Expression/computed");
+        toCode(context:BindContext):string{
+            return null;
+        } 
+        static beginPatten:RegExp=/^\s*\{\s*/i;
+        static tryParse(text:string , opts?:ParseExpressionOpts):ObjectExpression{
+            if(!text) return null;
+            let len :number = 0;
+            let needBrackets = opts && opts.objectBrackets;
+            let match = text.match(ObjectExpression.beginPatten);
+            if(match){   
+                text = text.substr(match[0].length);
+                len = match.length;
+                needBrackets = true;
+            }else{
+                if(needBrackets) return null;
             }
-            let argtext = matches[2].replace(trimRegex,"");
-            let args:Expression[] =[];
-            if(argtext){
-                let argtxts = argtext.split(",");
-                for(let i=0,j=argtxts.length;i<j;i++){
-                    let exp = Expression.tryParse(argtxts[i].replace(trimRegex,""));
-                    args.push(exp);
+            let obj :{[index:string]:Expression};
+            if(needBrackets){
+                let endPatten = /^\s*\}\s*/i;
+                let m = text.match(endPatten);
+                if(m){
+                    len += m[0].length;
+                    return new ObjectExpression({},len);
                 }
             }
-            return new FunctionExpression(fnname,args);
-        }
-        toCode(context:BindContext):string{
-            let code:string = "context.getFunc(\"" + this.funname + "\")(";
-            for(let i=0,j=this.arguments.length;i<j;i++){
-                code += this.arguments[i].toCode(context);
-                if(i!=0) code+= ",";
+
+            while(true){
+                
+                let keyExpr:KeyExpression = KeyExpression.tryParse(text);
+                if(!keyExpr) break;
+                text = text.substr(keyExpr.matchLength);
+                len += keyExpr.matchLength;
+                if(!text)break;
+                let constEndPatten :RegExp = needBrackets?/[,\}]/i:/,/i;
+                let valueExpr = Expression.tryParse(text,{constantEndPatten:constEndPatten,objectBrackets:true});
+                if(!valueExpr)break;
+                
+
+                (obj||(obj={}))[keyExpr.key] = valueExpr;
+                text = text.substr(valueExpr.matchLength);
+                len += keyExpr.matchLength;
+                if(needBrackets && (<ConstantExpression>valueExpr).endWith){
+                    let endWith = (<ConstantExpression>valueExpr).endWith;
+                    if(endWith=="}"){ len ++;break;}
+                }
+                if(!text)break;
             }
-            return code += ")";
-        } 
+            return obj?new ObjectExpression(obj,len):null;
+        }
     }
+
     
     export interface IABinder{
         (element:HTMLElement,accessor:IModelAccessor,controller:IController,extra?:any):Function;
