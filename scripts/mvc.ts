@@ -2249,7 +2249,7 @@ export namespace Y {
     }
     export interface ParseExpressionOpts{
         //对象表达式是否必须要有{}
-        objectBrackets?:boolean;
+        objectBrackets?:boolean|string[];
         //固定值的结束标记
         constantEndPatten?:RegExp;
     }
@@ -2264,6 +2264,7 @@ export namespace Y {
             
             if( expr = ObjectExpression.tryParse(text,opts)) return expr;;
             if(expr = ModelExpression.tryParse(text)) return expr;
+            if(expr = FunctionExpression.tryParse(text)) return expr;
             return ConstantExpression.tryParse(text,opts);
             //if(!exp) exp = FunctionExpression.tryParse(text);
             //if(!exp) exp = ComputedExpression.tryParse(text);
@@ -2300,7 +2301,7 @@ export namespace Y {
                 let endPatten = opts.constantEndPatten;
                 let matches = text.match(endPatten);
                 if(matches) {
-                    result = new ConstantExpression(text.substr(0,matches.index),matches.index + matches[0].length);
+                    result = new ConstantExpression(text.substr(0,matches.index),matches.index );
                     result.endWith = matches[0];
                     return result;
                 }//else return null;
@@ -2382,11 +2383,12 @@ export namespace Y {
     export class FunctionExpression extends Expression{
         arguments:Expression[];
         funname:string;
-        constructor(name:string,args:Expression[]){
+        constructor(name:string,args:Expression[],len:number){
             super();
             this.type = ExpressionTypes.function;
             this.arguments = args;
             this.funname = name;
+            this.matchLength = len;
         }
 
         getDeps(context:BindContext,deps?:string[]):string[]{
@@ -2398,7 +2400,7 @@ export namespace Y {
             if(c<deps.length)return deps;
             return null;
         }
-        static patten :RegExp = /^\s*([a-zA-Z_][a-zA-Z0-9_\$])\s*\(\s*/i;
+        static patten :RegExp = /^\s*([a-zA-Z_][a-zA-Z0-9_\$]*)\s*\(\s*/i;
         static tryParse(text:string):FunctionExpression{
             if(!text)return null;
             let matches = text.match(FunctionExpression.patten);
@@ -2408,19 +2410,28 @@ export namespace Y {
             let len :number=matches[0].length;
             text = text.substr(len);
             let args:Expression[] =[];
-            while(true){
-                let arg = Expression.tryParse(text,/\)/i);
-                if(arg===null)break;
-                if(arg.type === ExpressionTypes.constant){
-                    if((<ConstantExpression>arg).endWith!=")") return null;
-                    args.push(arg);
-                    len += arg.matchLength;
-                    break;
-                }
-                args.push(arg);
-                len+= arg.matchLength;
+            if(text[0]==")"){
+                len++;
+                return new FunctionExpression(fnname,args,len);
             }
-            let end = text[len];
+            while(true){
+                let arg = Expression.tryParse(text,{constantEndPatten:/[,\)]/i,objectBrackets:true});
+                if(arg){
+                    args.push(arg);
+                    text =text.substr(arg.matchLength);
+                    len+= arg.matchLength;
+                }
+                
+                let first:string = text[0];
+                if(first==","){
+                    text=text.substr(1);
+                    len++;
+                }else if(first==")"){
+                    len++;break;
+                }
+                if(!text)return null;
+            }
+            return new FunctionExpression(fnname,args,len);
             //if(end===")")
         }
         toCode(context:BindContext):string{
@@ -2662,12 +2673,23 @@ export namespace Y {
         toCode(context:BindContext):string{
             return null;
         } 
-        static beginPatten:RegExp=/^\s*\{\s*/i;
         static tryParse(text:string , opts?:ParseExpressionOpts):ObjectExpression{
             if(!text) return null;
+
             let len :number = 0;
+            let constEndPatten :RegExp ;
             let needBrackets = opts && opts.objectBrackets;
-            let match = text.match(ObjectExpression.beginPatten);
+            let beginPatten:RegExp;
+            
+            if(needBrackets){
+                let beginToken = needBrackets[0]||"\\{";
+                beginPatten = new RegExp("^\s*" + beginToken + "\s*");
+                
+            }else{
+                beginPatten = /^\s*\{/i;
+                
+            } 
+            let match = text.match(beginPatten);
             if(match){   
                 text = text.substr(match[0].length);
                 len = match.length;
@@ -2675,36 +2697,45 @@ export namespace Y {
             }else{
                 if(needBrackets) return null;
             }
-            let obj :{[index:string]:Expression};
+            let endPatten :RegExp;
+            let endToken :string;
             if(needBrackets){
-                let endPatten = /^\s*\}\s*/i;
+                endToken= needBrackets[1]?needBrackets[1]:"\\}";
+                endPatten = new RegExp("^\s*" + endToken + "\s*");
+                
                 let m = text.match(endPatten);
                 if(m){
                     len += m[0].length;
                     return new ObjectExpression({},len);
                 }
+                constEndPatten=  new RegExp("[" + endToken + ",]");
+                endToken = endToken[endToken.length-1];
+            }else{
+                endToken = "}";
+                constEndPatten = /,/;
             }
-
+            let obj :{[index:string]:Expression};
             while(true){
-                
                 let keyExpr:KeyExpression = KeyExpression.tryParse(text);
-                if(!keyExpr) break;
+                if(!keyExpr) {
+                    if(needBrackets) throw new Error("不正确的Object表达式,无法分析出key:" + text);
+                    break;
+                }
                 text = text.substr(keyExpr.matchLength);
                 len += keyExpr.matchLength;
                 if(!text)break;
-                let constEndPatten :RegExp = needBrackets?/[,\}]/i:/,/i;
+                
                 let valueExpr = Expression.tryParse(text,{constantEndPatten:constEndPatten,objectBrackets:true});
                 if(!valueExpr)break;
-                
-
                 (obj||(obj={}))[keyExpr.key] = valueExpr;
                 text = text.substr(valueExpr.matchLength);
-                len += keyExpr.matchLength;
+                len += valueExpr.matchLength;
                 if(needBrackets && (<ConstantExpression>valueExpr).endWith){
                     let endWith = (<ConstantExpression>valueExpr).endWith;
-                    if(endWith=="}"){ len ++;break;}
+                    if(endWith==endToken){ len ++;break;}
                 }
                 if(!text)break;
+                if(needBrackets && text[0]==endToken)break;
             }
             return obj?new ObjectExpression(obj,len):null;
         }

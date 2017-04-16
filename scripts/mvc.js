@@ -2275,6 +2275,8 @@ var Y;
             ;
             if (expr = ModelExpression.tryParse(text))
                 return expr;
+            if (expr = FunctionExpression.tryParse(text))
+                return expr;
             return ConstantExpression.tryParse(text, opts);
             //if(!exp) exp = FunctionExpression.tryParse(text);
             //if(!exp) exp = ComputedExpression.tryParse(text);
@@ -2316,7 +2318,7 @@ var Y;
                 var endPatten = opts.constantEndPatten;
                 var matches = text.match(endPatten);
                 if (matches) {
-                    result = new ConstantExpression(text.substr(0, matches.index), matches.index + matches[0].length);
+                    result = new ConstantExpression(text.substr(0, matches.index), matches.index);
                     result.endWith = matches[0];
                     return result;
                 } //else return null;
@@ -2411,11 +2413,12 @@ var Y;
     Y.ModelExpression = ModelExpression;
     var FunctionExpression = (function (_super) {
         __extends(FunctionExpression, _super);
-        function FunctionExpression(name, args) {
+        function FunctionExpression(name, args, len) {
             var _this = _super.call(this) || this;
             _this.type = ExpressionTypes["function"];
             _this.arguments = args;
             _this.funname = name;
+            _this.matchLength = len;
             return _this;
         }
         FunctionExpression.prototype.getDeps = function (context, deps) {
@@ -2439,20 +2442,25 @@ var Y;
             text = text.substr(len);
             var args = [];
             while (true) {
-                var arg = Expression.tryParse(text, /\)/i);
-                if (arg === null)
-                    break;
-                if (arg.type === ExpressionTypes.constant) {
-                    if (arg.endWith != ")")
-                        return null;
+                var arg = Expression.tryParse(text, { constantEndPatten: /[,\)]/i, objectBrackets: true });
+                if (arg) {
                     args.push(arg);
+                    text = text.substr(arg.matchLength);
                     len += arg.matchLength;
+                }
+                var first = text[0];
+                if (first == ",") {
+                    text = text.substr(1);
+                    len++;
+                }
+                else if (first == ")") {
+                    len++;
                     break;
                 }
-                args.push(arg);
-                len += arg.matchLength;
+                if (!text)
+                    return null;
             }
-            var end = text[len];
+            return new FunctionExpression(fnname, args, len);
             //if(end===")")
         };
         FunctionExpression.prototype.toCode = function (context) {
@@ -2466,7 +2474,7 @@ var Y;
         };
         return FunctionExpression;
     }(Expression));
-    FunctionExpression.patten = /^\s*([a-zA-Z_][a-zA-Z0-9_\$])\s*\(\s*/i;
+    FunctionExpression.patten = /^\s*([a-zA-Z_][a-zA-Z0-9_\$]*)\s*\(\s*/i;
     Y.FunctionExpression = FunctionExpression;
     var ChildBeginExpression = (function (_super) {
         __extends(ChildBeginExpression, _super);
@@ -2722,8 +2730,17 @@ var Y;
             if (!text)
                 return null;
             var len = 0;
+            var constEndPatten;
             var needBrackets = opts && opts.objectBrackets;
-            var match = text.match(ObjectExpression.beginPatten);
+            var beginPatten;
+            if (needBrackets) {
+                var beginToken = needBrackets[0] || "\\{";
+                beginPatten = new RegExp("^\s*" + beginToken + "\s*");
+            }
+            else {
+                beginPatten = /^\s*\{/i;
+            }
+            var match = text.match(beginPatten);
             if (match) {
                 text = text.substr(match[0].length);
                 len = match.length;
@@ -2733,45 +2750,57 @@ var Y;
                 if (needBrackets)
                     return null;
             }
-            var obj;
+            var endPatten;
+            var endToken;
             if (needBrackets) {
-                var endPatten = /^\s*\}\s*/i;
+                endToken = needBrackets[1] ? needBrackets[1] : "\\}";
+                endPatten = new RegExp("^\s*" + endToken + "\s*");
                 var m = text.match(endPatten);
                 if (m) {
                     len += m[0].length;
                     return new ObjectExpression({}, len);
                 }
+                constEndPatten = new RegExp("[" + endToken + ",]");
+                endToken = endToken[endToken.length - 1];
             }
+            else {
+                endToken = "}";
+                constEndPatten = /,/;
+            }
+            var obj;
             while (true) {
                 var keyExpr = KeyExpression.tryParse(text);
-                if (!keyExpr)
+                if (!keyExpr) {
+                    if (needBrackets)
+                        throw new Error("不正确的Object表达式,无法分析出key:" + text);
                     break;
+                }
                 text = text.substr(keyExpr.matchLength);
                 len += keyExpr.matchLength;
                 if (!text)
                     break;
-                var constEndPatten = needBrackets ? /[,\}]/i : /,/i;
                 var valueExpr = Expression.tryParse(text, { constantEndPatten: constEndPatten, objectBrackets: true });
                 if (!valueExpr)
                     break;
                 (obj || (obj = {}))[keyExpr.key] = valueExpr;
                 text = text.substr(valueExpr.matchLength);
-                len += keyExpr.matchLength;
+                len += valueExpr.matchLength;
                 if (needBrackets && valueExpr.endWith) {
                     var endWith = valueExpr.endWith;
-                    if (endWith == "}") {
+                    if (endWith == endToken) {
                         len++;
                         break;
                     }
                 }
                 if (!text)
                     break;
+                if (needBrackets && text[0] == endToken)
+                    break;
             }
             return obj ? new ObjectExpression(obj, len) : null;
         };
         return ObjectExpression;
     }(Expression));
-    ObjectExpression.beginPatten = /^\s*\{\s*/i;
     Y.ObjectExpression = ObjectExpression;
     var binders = {
         "bibound.text": function (element, accessor) {

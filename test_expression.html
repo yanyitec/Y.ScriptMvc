@@ -59,6 +59,10 @@
       //函数表达式
       var text = "date($.createTime,yyyy-MM-dd)";
       var expr = Y.Expression.tryParse(text);
+      //函数递归
+      var text = "format(date($.createTime),yyyy-MM-dd,getbase())";
+      var expr = Y.Expression.tryParse(text);
+
       console.log("ok");
     </script>
   </body>
