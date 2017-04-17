@@ -921,13 +921,10 @@ var Y;
             var view;
             var viewTemplate = this.data["y-controller-view"];
             if (viewTemplate == null) {
-                view = new View(controller, null, area);
-                this.data["y-controller-view"] = view.clone();
             }
             else {
-                view = viewTemplate.clone(controller, null, area);
             }
-            controller.view = view;
+            //controller.view = view;
             controller.model = view.model.$accessor;
             return controller;
         };
@@ -1190,16 +1187,25 @@ var Y;
                 if (newValue === undefined) {
                     return self._subject[self._name];
                 }
-                self.setValue(newValue);
+                self.set_value(newValue);
                 return accessor;
             };
             accessor.subscribe = function (handler) {
                 self.subscribe(handler);
+                return accessor;
             };
             accessor.unsubscribe = function (handler) {
                 self.unsubscribe(handler);
+                return accessor;
             };
-            accessor.toString = function () { return self.getValue(); };
+            accessor.get_value = function () {
+                return self.get_value();
+            };
+            accessor.set_value = function (value, extra) {
+                self.set_value(value, extra);
+                return accessor;
+            };
+            accessor.toString = function () { return self.get_value(); };
             this.$model = accessor.$model = this;
             this.$accessor = accessor.$accessor = accessor;
             accessor.$modelType = this.$modelType = ModelTypes.any;
@@ -1234,7 +1240,7 @@ var Y;
                 return this._subject;
             }
             newSubject[this._name] = oldValue;
-            this.setValue(newValue, source);
+            this.set_value(newValue, source);
             return newSubject;
         };
         Model.prototype.subscribe = function (handler) {
@@ -1243,6 +1249,7 @@ var Y;
                 handlers = this._changeHandlers = new Array();
             }
             handlers.push(handler);
+            return this;
         };
         Model.prototype.unsubscribe = function (handler) {
             var handlers = this._changeHandlers;
@@ -1255,6 +1262,7 @@ var Y;
                     handlers.push(existed);
                 }
             }
+            return this;
         };
         //触发事件
         Model.prototype._notifyValuechange = function (evt, ignoreSuperior) {
@@ -1274,8 +1282,8 @@ var Y;
                 superior._notifyValuechange(evt);
             }
         };
-        Model.prototype.getValue = function () { return this._subject[this._name]; };
-        Model.prototype.setValue = function (newValue, source) {
+        Model.prototype.get_value = function () { return this._subject[this._name]; };
+        Model.prototype.set_value = function (newValue, source) {
             var subject = this._subject;
             //得到原先的值
             var oldValue = subject[this._name];
@@ -1444,8 +1452,8 @@ var Y;
                 args.pop();
             }
             this._computed = new Computed(this._superior.$accessor, args, fn);
-            this.getValue = function () { return _this._computed.getValue(); };
-            this.setValue = function () { throw "Computed member is readonly."; };
+            this.get_value = function () { return _this._computed.getValue(); };
+            this.set_value = function () { throw "Computed member is readonly."; };
             this.prop = function () { throw "Computed member can not define member."; };
             this.$accessor.$modelType = this.$modelType = ModelTypes.computed;
             return this;
@@ -1635,7 +1643,7 @@ var Y;
             var members = this._members || (this._members = {});
             var itemModel = members[index];
             if (itemModel !== undefined) {
-                itemModel.setValue(itemValue, index);
+                itemModel.set_value(itemValue, index);
             }
             else {
                 var oldItemValue = value[index];
@@ -1715,17 +1723,17 @@ var Y;
     /////////////////////////////////////////////////
     // View
     //////////////////////////////////////////////////
-    var View = (function () {
-        function View(controller, model, element) {
+    var View1 = (function () {
+        function View1(controller, model, element) {
             if (controller === undefined)
                 return;
             this.element = element;
             this.model = model || (model = new Model());
             this.controller = controller;
-            this._bind = makeBind(this.model, this.element, this.controller);
+            //this._bind = makeBind(this.model,this.element,this.controller);
         }
-        View.prototype.clone = function (controller, model, element) {
-            var other = new View();
+        View1.prototype.clone = function (controller, model, element) {
+            var other = new View1();
             var proto = this;
             var elem = Y.platform.cloneNode(proto.element);
             if (element) {
@@ -1752,36 +1760,20 @@ var Y;
             }
             return other;
         };
-        View.prototype.dispose = function () {
+        View1.prototype.dispose = function () {
             this.element = undefined;
             this.model = undefined;
             this._bind = undefined;
             this.controller = undefined;
         };
-        return View;
+        return View1;
     }());
-    Y.View = View;
-    function makeBind(model, element, controller) {
-        var bindContext = new ABindContext(model, element, controller);
-        var exprs = [];
-        buildBind(element, bindContext, exprs);
-        while (true) {
-            var expr = exprs.pop();
-            if (!(expr instanceof aChildEndExpression)) {
-                exprs.push(expr);
-                break;
-            }
-        }
-        var codes = exprs.join("");
-        codes = "var $self = self.$accessor;\nvar $root = self.root().$accessor;var _binders = Y.binders;\nvar _scopes=[];var attach=Y.platform.attach;var detech = Y.platform.detech;" + codes;
-        return new Function("self", "_element", "_controller", codes);
-    }
-    Y.makeBind = makeBind;
+    Y.View1 = View1;
     var ABindContext = (function () {
         function ABindContext(root, element, controller) {
             this.$self = this.$root = root.$accessor;
             this._element = element;
-            this._binders = Y.binders;
+            //this._binders = binders;
             this._controller = controller;
             this._scopes = [];
         }
@@ -1795,72 +1787,6 @@ var Y;
         BExpression.prototype.toCode = function () { throw "abstract function"; };
         return BExpression;
     }());
-    var ScopeBeginExpression = (function (_super) {
-        __extends(ScopeBeginExpression, _super);
-        function ScopeBeginExpression(modelPath, context) {
-            var _this = _super.call(this) || this;
-            var result = defineModel(modelPath, context);
-            _this.modelPath = result.path;
-            _this.bind = function (context) {
-                context._scopes.push(context.$self);
-                context.$self = result.model.$accessor;
-            };
-            return _this;
-            //this.childAt = at;
-        }
-        ScopeBeginExpression.prototype.toString = function () {
-            return "_scopes.push($self);\n$self = " + this.modelPath + ";\n";
-        };
-        return ScopeBeginExpression;
-    }(BExpression));
-    var ScopeEndExpression = (function (_super) {
-        __extends(ScopeEndExpression, _super);
-        function ScopeEndExpression() {
-            var _this = _super.call(this) || this;
-            _this.bind = function (context) {
-                context.$self = context._scopes.pop();
-            };
-            return _this;
-            //this.childAt = at;
-        }
-        ScopeEndExpression.prototype.toString = function () {
-            return "$self = _scopes.pop();\n";
-        };
-        return ScopeEndExpression;
-    }(BExpression));
-    var aChildBeginExpression = (function (_super) {
-        __extends(aChildBeginExpression, _super);
-        function aChildBeginExpression(at, element) {
-            var _this = _super.call(this) || this;
-            _this.childAt = at;
-            _this.element = element;
-            _this.bind = function (context) {
-                context._element = context._element.childNodes[at];
-            };
-            return _this;
-            //this.childAt = at;
-        }
-        aChildBeginExpression.prototype.toString = function () {
-            return "_element = _element.childNodes[" + this.childAt + "];\n";
-        };
-        return aChildBeginExpression;
-    }(BExpression));
-    var aChildEndExpression = (function (_super) {
-        __extends(aChildEndExpression, _super);
-        function aChildEndExpression(at) {
-            var _this = _super.call(this) || this;
-            _this.childAt = at;
-            _this.bind = function (context) {
-                context._element = context._element.parentNode;
-            };
-            return _this;
-            //this.childAt = at;
-        }
-        aChildEndExpression.prototype.toString = function () {
-            return "_element = _element.parentNode;\n";
-        };
-        return aChildEndExpression;
-    }(BExpression));
     var UniboundExpression = (function (_super) {
         __extends(UniboundExpression, _super);
         function UniboundExpression(modelPath, context, attrName) {
@@ -1912,23 +1838,6 @@ var Y;
             return "_binders[\"each\"](_element," + this.modelPath + ",_controller);\n";
         };
         return EachExpression;
-    }(BExpression));
-    var aLabelExpression = (function (_super) {
-        __extends(aLabelExpression, _super);
-        function aLabelExpression(key, element, attr) {
-            if (attr === void 0) { attr = "textContent"; }
-            var _this = _super.call(this) || this;
-            _this.key = key;
-            _this.attr = attr;
-            _this.bind = function (context) {
-                element[attr] = context._controller._TEXT(key);
-            };
-            return _this;
-        }
-        aLabelExpression.prototype.toString = function () {
-            return "_element[\"" + this.attr + "\"]=_controller._TEXT(\"" + this.key + "\");\n";
-        };
-        return aLabelExpression;
     }(BExpression));
     var EventExpression = (function (_super) {
         __extends(EventExpression, _super);
@@ -1994,137 +1903,6 @@ var Y;
     function defineModel(pathOrExpr, context) {
         return definePath(pathOrExpr, context);
     }
-    function buildBind(element, context, exprs) {
-        var tagName = element.tagName;
-        if (!tagName) {
-            var html = element.textContent;
-            if (tryBuildLabel(html, element, context, exprs))
-                return;
-            if (tryBuildUniBound(html, element, context, exprs, "textContent"))
-                return;
-            return;
-        }
-        var elementValue = element.value;
-        if (elementValue) {
-            tryBuildLabel(elementValue, element, context, exprs, "value");
-            tryBuildUniBound(elementValue, element, context, exprs, "value");
-            tryBuildBiBound(elementValue, element, context, exprs);
-        }
-        var eachAttr;
-        var scopeAttr;
-        for (var n in Y.binders) {
-            var attr = element.getAttribute(n);
-            if (!attr)
-                continue;
-            if (n == "y-scope" || n == "scope") {
-                scopeAttr = attr;
-                continue;
-            }
-            if (n == "y-each" || n == "each") {
-                eachAttr = attr;
-                continue;
-            }
-            if (tryBuildUniBound(attr, element, context, exprs))
-                continue;
-            if (tryBuildEventBound(attr, n, element, context, exprs))
-                continue;
-        }
-        if (!element.hasChildNodes())
-            return;
-        if (eachAttr) {
-            var eachExpr = new EachExpression(eachAttr, context);
-            eachExpr.bind(context);
-            exprs.push(eachExpr);
-            return;
-        }
-        var children = element.childNodes;
-        if (scopeAttr) {
-            var scopeBegin = new ScopeBeginExpression(scopeAttr, context);
-            scopeBegin.bind(context);
-            exprs.push(scopeBegin);
-        }
-        for (var i = 0, j = element.childNodes.length; i < j; i++) {
-            var child = element.childNodes[i];
-            var startExpr = new aChildBeginExpression(i, element);
-            startExpr.bind(context);
-            exprs.push(startExpr);
-            buildBind(child, context, exprs);
-            var endExpr = new aChildEndExpression(i);
-            endExpr.bind(context);
-            var last = exprs.pop();
-            if (last.childAt !== i || last.element != element) {
-                exprs.push(last);
-                exprs.push(endExpr);
-            }
-        }
-        if (scopeAttr) {
-            var lastExpr = exprs.pop();
-            if (!(lastExpr instanceof ScopeBeginExpression)) {
-                exprs.push(lastExpr);
-                var scopeEnd = new ScopeEndExpression();
-                scopeEnd.bind(context);
-                exprs.push(scopeEnd);
-            }
-        }
-    }
-    function tryBuildLabel(exprText, element, context, exprs, attrName) {
-        if (attrName === void 0) { attrName = "textContent"; }
-        var match = exprText.match(labelReg);
-        if (match != null) {
-            var text = match[1];
-            var expr = new aLabelExpression(text, element, attrName);
-            expr.bind(context);
-            exprs.push(expr);
-            return true;
-        }
-        return false;
-    }
-    //单向绑定
-    function tryBuildUniBound(exprText, element, context, exprs, attrName) {
-        if (attrName === void 0) { attrName = "value"; }
-        if (!exprText)
-            return false;
-        var match = exprText.match(textReg);
-        if (match != null) {
-            var path = match[1];
-            var expr = new UniboundExpression(path, context, attrName);
-            expr.bind(context);
-            exprs.push(expr);
-            return true;
-        }
-        return false;
-    }
-    //双向绑定
-    function tryBuildBiBound(exprText, element, context, exprs) {
-        var bindname = getBindName(element);
-        if (bindname == "checkbox" || bindname == "radio") {
-            exprText = element.getAttribute("checked");
-        }
-        if (!exprText)
-            return false;
-        var match = exprText.match(valueReg);
-        if (match != null) {
-            var path = match[1];
-            var expr = new BinderExpression(path, "bibound." + bindname, context, context._controller);
-            expr.bind(context);
-            exprs.push(expr);
-            return true;
-        }
-        return false;
-    }
-    //事件绑定
-    function tryBuildEventBound(exprText, evtName, element, context, exprs) {
-        var match = exprText.match(eventReg);
-        if (match != null) {
-            var actionName = match[1];
-            evtName = evtName.indexOf("y-") == 0 ? evtName.substr(2) : evtName;
-            var expr = new EventExpression(evtName, actionName);
-            expr.bind(context);
-            exprs.push(expr);
-            return true;
-        }
-        return false;
-    }
     function getBindName(element) {
         var bindname = null;
         if (element.tagName == "TEXTAREA")
@@ -2158,13 +1936,163 @@ var Y;
             deps.setValue(element.value);
         });
     };
+    var ViewOpts = (function () {
+        function ViewOpts() {
+        }
+        return ViewOpts;
+    }());
+    Y.ViewOpts = ViewOpts;
+    var View = (function () {
+        function View(opts) {
+            var elem = this.element = Y.platform.getElement(opts.element);
+            var existed = this.element["y-bind-view"];
+            if (existed)
+                existed.dispose();
+            var controller = this.controller = opts.controller || {};
+            this.global_binders = View.binders;
+            this.local_binders = controller._binders || {};
+            if (this.controller.TEXT)
+                this.label = function (key) { return controller.TEXT.call(controller, key); };
+            var protoView = opts.prototypeView;
+            if (!protoView) {
+                controller.model = this.model = new Model("$", { "$": opts.modelValue || {} }).$accessor;
+                this._binder = this.makeBinder();
+            }
+            else {
+                this.element.innerHTML = protoView.element.innerHTML;
+                controller.model = this.model = protoView.model.$model.clone({ "$": opts.modelValue || {} }).$accessor;
+                this._binder = protoView._binder;
+            }
+            if (!opts.nobind)
+                this.bind();
+        }
+        View.prototype.bind = function (value) {
+            if (value)
+                this.model(value);
+            if (this.element["y-bind-view"])
+                return this;
+            this._binder(this.element, this.model, this);
+            return this.element["y-bind-view"] = this;
+        };
+        View.prototype.getFunc = function (fname) {
+            var fn = this.controller[fname];
+            if (fn && typeof fn === "function")
+                return fn;
+            return null;
+        };
+        View.prototype.label = function (key) {
+            var text;
+            var ctrlr = this.controller;
+            if (!ctrlr)
+                return key;
+            if (ctrlr._labels)
+                text = ctrlr._labels[key];
+            if (text === undefined)
+                if (ctrlr.module)
+                    text = ctrlr.module.label(key);
+            if (text === undefined)
+                return key;
+        };
+        View.prototype.getBinder = function (name) {
+            return this.local_binders[name] || this.global_binders[name];
+        };
+        View.prototype.makeBinder = function () {
+            var exprs = [];
+            parseElement(this, this.element, exprs, true);
+            while (true) {
+                var last = exprs.pop();
+                if (!last)
+                    break;
+                if (last.childAt === undefined && !last.parentNode) {
+                    exprs.push(last);
+                    break;
+                }
+            }
+            var code = "";
+            for (var i = 0, j = exprs.length; i < j; i++) {
+                code += exprs[i].toCode(this);
+            }
+            //(this:BindContext,element:HTMLElement,bindable:IBindable):void;
+            code = "var $_scopes= [];\n" + code;
+            var binder = new Function("$_element", "$_self", "$_context", code);
+            return binder;
+        };
+        View.prototype.dispose = function () {
+        };
+        return View;
+    }());
+    View.funcs = {};
+    View.binders = {};
+    Y.View = View;
+    function parseElement(context, element, expressions, igoneSelf) {
+        var each;
+        var controller;
+        var scope;
+        var ui;
+        if (!igoneSelf) {
+            if (element.nodeType == 3) {
+                var embededExpr = ComputedExpression.embeded(element.nodeValue);
+                if (embededExpr)
+                    expressions.push(new BindExpression("y-text", embededExpr));
+                return;
+            }
+            var attrs = element.attributes;
+            for (var i = 0, j = attrs.length; i < j; i++) {
+                var attr = attrs[i];
+                var attrname = attr.name;
+                var attrvalue = attr.value;
+                var binder = context.global_binders[attrname];
+                if (!binder)
+                    binder = context.local_binders[attrname];
+                if (!binder)
+                    continue;
+                var expr = Expression.parse(attrvalue);
+                if (!expr)
+                    continue;
+                switch (attrname) {
+                    case "y-each":
+                        each = expr;
+                        continue;
+                    case "y-controller":
+                        controller = expr;
+                        continue;
+                    case "y-scope":
+                        if (expr.type == ExpressionTypes.model)
+                            scope = expr;
+                        continue;
+                    case "y-ui":
+                        ui = expr;
+                        continue;
+                }
+                expr = new BindExpression(attrname, expr);
+                expressions.push(expr);
+            }
+        }
+        if (!element.hasChildNodes)
+            return;
+        if (scope)
+            expressions.push(new ScopeBeginExpression(scope));
+        var nodes = element.childNodes;
+        for (var i = 0, j = nodes.length; i < j; i++) {
+            var node = nodes[i];
+            expressions.push(new ChildBeginExpression(i, element));
+            parseElement(context, node, expressions);
+            var last = expressions.pop();
+            if (last.childAt != i || last.parentNode != element) {
+                expressions.push(last);
+                expressions.push(new ChildEndExpression(i, element));
+            }
+        }
+        if (scope)
+            expressions.push(new ScopeEndExpression());
+    }
     ;
     var ConstantBindableObject = (function () {
         function ConstantBindableObject(value) {
             this.value = value;
         }
-        ConstantBindableObject.prototype.getValue = function () { return this.value; };
-        ConstantBindableObject.prototype.setValue = function (val, extra) { return this; };
+        ConstantBindableObject.prototype.get_value = function () { return this.value; };
+        ConstantBindableObject.prototype.set_value = function (val, extra) { return this; };
         ConstantBindableObject.prototype.subscribe = function (event, handler) { return this; };
         ConstantBindableObject.prototype.unsubscribe = function (event, handler) { return this; };
         return ConstantBindableObject;
@@ -2173,26 +2101,28 @@ var Y;
     var BindDependences = (function () {
         function BindDependences(deps, getter) {
             var _this = this;
-            if (!deps) {
-                this.getValue = getter;
-                this.setValue = function (value, extra) { throw new Error("多个依赖项不可以设置值，它是只读的"); };
+            if (!deps || deps.length === 0) {
+                this.get_value = getter;
+                this.set_value = function (value, extra) { throw new Error("多个依赖项不可以设置值，它是只读的"); };
                 this.subscribe = this.unsubscribe = function (handler) { };
                 return;
             }
             var isArr = isArray(deps);
-            if (isArr && deps.length == 0) {
-                isArr = false;
-                deps = deps[0];
+            if (isArr) {
+                if (deps.length == 0 && deps.length == 1) {
+                    isArr = false;
+                    deps = deps[0];
+                }
             }
             if (!isArr) {
-                this.getValue = function () { return deps.getValue(); };
-                this.setValue = function (value, extra) { return deps.setValue(value, extra); };
+                this.get_value = function () { return deps.get_value(); };
+                this.set_value = function (value, extra) { return deps.set_value(value, extra); };
                 this.subscribe = function (handler) { return deps.subscribe(handler); };
                 this.unsubscribe = function (handler) { return deps.unsubscribe(handler); };
             }
             else {
                 this.deps = deps;
-                this.getValue = getter;
+                this.get_value = getter;
                 this.subscribe = function (handler) {
                     for (var i = 0, j = deps.length; i < j; i++) {
                         deps[i].subscribe(handler);
@@ -2205,100 +2135,12 @@ var Y;
                     }
                     return _this;
                 };
-                this.setValue = function (value, extra) { throw new Error("多个依赖项不可以设置值，它是只读的"); };
+                this.set_value = function (value, extra) { throw new Error("多个依赖项不可以设置值，它是只读的"); };
             }
         }
         return BindDependences;
     }());
     Y.BindDependences = BindDependences;
-    var BindContext = (function () {
-        function BindContext() {
-        }
-        BindContext.prototype.getFunc = function (name) { return null; };
-        BindContext.prototype.label = function (key) { return key; };
-        BindContext.prototype.getBinder = function (name) {
-            return this.local_binders[name] || this.global_binders[name];
-        };
-        return BindContext;
-    }());
-    Y.BindContext = BindContext;
-    function parseElement(context, element, expressions) {
-        if (element.nodeType == 3) {
-            var embededExpr = ComputedExpression.embeded(element.nodeValue);
-            if (embededExpr)
-                expressions.push(new BindExpression("y-text", embededExpr));
-            return;
-        }
-        var each;
-        var controller;
-        var scope;
-        var ui;
-        var attrs = element.attributes;
-        for (var i = 0, j = attrs.length; i < j; i++) {
-            var attr = attrs[i];
-            var attrname = attr.name;
-            var attrvalue = attr.value;
-            var binder = context.global_binders[attrname];
-            if (!binder)
-                binder = context.local_binders[attrname];
-            if (!binder)
-                continue;
-            var expr = Expression.parse(attrvalue);
-            if (!expr)
-                continue;
-            expr = new BindExpression(attrname, expr);
-            switch (attrname) {
-                case "y-each":
-                    each = expr;
-                    continue;
-                case "y-controller":
-                    controller = expr;
-                    continue;
-                case "y-scope":
-                    scope = expr;
-                    continue;
-                case "y-ui":
-                    ui = expr;
-                    continue;
-            }
-            expressions.push(expr);
-        }
-        if (!element.hasChildNodes)
-            return;
-        var nodes = element.childNodes;
-        for (var i = 0, j = nodes.length; i < j; i++) {
-            var node = nodes[i];
-            expressions.push(new ChildBeginExpression(i, element));
-            parseElement(context, node, expressions);
-            var last = expressions.pop();
-            if (last.childAt != i || last.parentNode != element) {
-                expressions.push(last);
-                expressions.push(new ChildEndExpression(i, element));
-            }
-        }
-    }
-    function makeBinder(context, element) {
-        var exprs = [];
-        parseElement(context, element, exprs);
-        while (true) {
-            var last = exprs.pop();
-            if (!last)
-                break;
-            if (last.childAt === undefined && !last.parentNode) {
-                exprs.push(last);
-                break;
-            }
-        }
-        var code = "";
-        for (var i = 0, j = exprs.length; i < j; i++) {
-            code += exprs[i].toCode(context);
-        }
-        //(this:BindContext,element:HTMLElement,bindable:IBindable):void;
-        code = "context.element = element;context.$self = bindable;\n" + code;
-        var binder = new Function("element", "bindable", "context", code);
-        return binder;
-    }
-    Y.makeBinder = makeBinder;
     var ExpressionTypes;
     (function (ExpressionTypes) {
         //固定表达式  y-controller='user,http://pro.com/user' y-click="onsubmit"
@@ -2309,18 +2151,16 @@ var Y;
         ExpressionTypes[ExpressionTypes["label"] = 2] = "label";
         //函数表达式  contains($Permission,$ROOT.Check,startTime)
         ExpressionTypes[ExpressionTypes["function"] = 3] = "function";
+        //对象表达式
         ExpressionTypes[ExpressionTypes["object"] = 4] = "object";
-        ExpressionTypes[ExpressionTypes["key"] = 5] = "key";
         //计算表达式 (price:$.Price,qty:Quanity)=>price*qty;
-        ExpressionTypes[ExpressionTypes["computed"] = 6] = "computed";
-        //嵌入表达式 Hi,{{$.Name}},now is {{date($.AccountingDate)}}
-        //embeded,
+        ExpressionTypes[ExpressionTypes["computed"] = 5] = "computed";
         //绑定
-        ExpressionTypes[ExpressionTypes["bind"] = 7] = "bind";
-        ExpressionTypes[ExpressionTypes["childBegin"] = 8] = "childBegin";
-        ExpressionTypes[ExpressionTypes["childEnd"] = 9] = "childEnd";
-        //多个
-        //url:$.url,name:mycontrol,dodo:date($.date,abc)
+        ExpressionTypes[ExpressionTypes["bind"] = 6] = "bind";
+        ExpressionTypes[ExpressionTypes["childBegin"] = 7] = "childBegin";
+        ExpressionTypes[ExpressionTypes["childEnd"] = 8] = "childEnd";
+        ExpressionTypes[ExpressionTypes["scopeBegin"] = 9] = "scopeBegin";
+        ExpressionTypes[ExpressionTypes["scopeEnd"] = 10] = "scopeEnd";
     })(ExpressionTypes = Y.ExpressionTypes || (Y.ExpressionTypes = {}));
     var Expression = (function () {
         function Expression() {
@@ -2420,25 +2260,27 @@ var Y;
         ModelExpression.prototype.getPath = function (context) {
             if (this._path)
                 return this._path;
-            var curr = context.$self.$model;
+            var curr = context.model.$model;
             var names = this.names.split(".");
-            var rs = ["$self"];
+            var rs = ["$_self"];
             for (var i = 0, j = names.length; i < j; i++) {
                 var name_3 = names[i].replace(Y.trimRegex, "");
                 if (!name_3)
                     throw new Error("Invalid model path : " + names.join("."));
                 if (name_3 == "$root" || name_3 == "$") {
                     curr = curr.root();
-                    rs = ["$self.$model.root().$accessor"];
+                    rs = ["$_self.$model.root().$accessor"];
                 }
                 else if (name_3 == "$parent") {
                     curr = curr.container();
-                    rs.push("$model.container().$accessor");
+                    rs.push("$_self.container().$accessor");
                 }
                 else if (name_3 == "$self") {
                     curr = curr;
                 }
                 else {
+                    if (i == 0)
+                        name_3 = name_3.replace(/^\$/, "");
                     curr = curr.prop(name_3, {});
                     rs.push(name_3);
                 }
@@ -2451,7 +2293,7 @@ var Y;
             return deps;
         };
         ModelExpression.prototype.toCode = function (context) {
-            return this.getPath(context) + ".$model";
+            return this.getPath(context);
         };
         ModelExpression.parse = function (text, opts) {
             if (!text)
@@ -2480,7 +2322,7 @@ var Y;
         }
         LabelExpression.prototype.getDeps = function (context, deps) { return null; };
         LabelExpression.prototype.toCode = function (context) {
-            return "context.label(\"" + this.key + "\")";
+            return "$_context.label(\"" + this.key + "\")";
         };
         LabelExpression.parse = function (text, opts) {
             var matches = text.match(LabelExpression.patten);
@@ -2489,7 +2331,7 @@ var Y;
         };
         return LabelExpression;
     }(Expression));
-    LabelExpression.patten = /^#([^#]+)#/i;
+    LabelExpression.patten = /^#([^#\n\r\t]+)#/;
     Y.LabelExpression = LabelExpression;
     var FunctionExpression = (function (_super) {
         __extends(FunctionExpression, _super);
@@ -2548,7 +2390,7 @@ var Y;
             //if(end===")")
         };
         FunctionExpression.prototype.toCode = function (context) {
-            var code = "context.getFunc(\"" + this.funname + "\")(";
+            var code = "$_context.getFunc(\"" + this.funname + "\")(";
             for (var i = 0, j = this.arguments.length; i < j; i++) {
                 code += this.arguments[i].toCode(context);
                 if (i != 0)
@@ -2560,27 +2402,6 @@ var Y;
     }(Expression));
     FunctionExpression.patten = /^\s*([a-zA-Z_][a-zA-Z0-9_\$]*)\s*\(\s*/i;
     Y.FunctionExpression = FunctionExpression;
-    var KeyExpression = (function (_super) {
-        __extends(KeyExpression, _super);
-        function KeyExpression(key, len) {
-            var _this = _super.call(this) || this;
-            _this.type = ExpressionTypes.constant;
-            _this.key = key;
-            _this.matchLength = len;
-            return _this;
-        }
-        KeyExpression.prototype.getDeps = function (context, deps) { return null; };
-        KeyExpression.prototype.toCode = function (context) {
-            return null;
-        };
-        KeyExpression.parse = function (text) {
-            var matches = text.match(KeyExpression.patten);
-            return matches ? new KeyExpression(matches[1], matches[0].length) : null;
-        };
-        return KeyExpression;
-    }(Expression));
-    KeyExpression.patten = /^(?:\s*,)?\s*([a-zA-Z_][a-zA-Z0-9_\$]*)\s*:\s*/i;
-    Y.KeyExpression = KeyExpression;
     var ObjectExpression = (function (_super) {
         __extends(ObjectExpression, _super);
         function ObjectExpression(members, matchLength) {
@@ -2590,9 +2411,26 @@ var Y;
             _this.matchLength = matchLength;
             return _this;
         }
-        ObjectExpression.prototype.getDeps = function (context, deps) { return null; };
+        ObjectExpression.prototype.getDeps = function (context, deps) {
+            var members = this.members;
+            deps || (deps = []);
+            var count = 0;
+            for (var n in members) {
+                var dep = members[n].getDeps(context, deps);
+                if (dep)
+                    count++;
+            }
+            return count ? deps : null;
+        };
         ObjectExpression.prototype.toCode = function (context) {
-            return null;
+            var code = "{";
+            var members = this.members;
+            for (var n in members) {
+                if (code.length != 1)
+                    code += ",";
+                code += "\"" + n + "\":" + members[n].toCode(context);
+            }
+            return code + "}";
         };
         ObjectExpression.parse = function (text, opts) {
             if (!text)
@@ -2637,20 +2475,27 @@ var Y;
             }
             var obj;
             while (true) {
-                var keyExpr = KeyExpression.parse(text);
-                if (!keyExpr) {
+                var keyMatches = text.match(ObjectExpression.patten);
+                //let keyExpr:KeyExpression = KeyExpression.parse(text);
+                if (!keyMatches) {
                     if (needBrackets)
                         throw new Error("不正确的Object表达式,无法分析出key:" + text);
                     break;
                 }
-                text = text.substr(keyExpr.matchLength);
-                len += keyExpr.matchLength;
-                if (!text)
-                    break;
+                var keyLen = keyMatches[0].length;
+                var key = keyMatches[1];
+                text = text.substr(keyLen);
+                len += keyLen;
+                if (!text) {
+                    if (needBrackets)
+                        return null;
+                    (obj || (obj = {}))[key] = new ConstantExpression("", 0);
+                    return new ObjectExpression(obj, len);
+                }
                 var valueExpr = Expression.parse(text, { constantEndPatten: constEndPatten, objectBrackets: true });
                 if (!valueExpr)
                     break;
-                (obj || (obj = {}))[keyExpr.key] = valueExpr;
+                (obj || (obj = {}))[key] = valueExpr;
                 text = text.substr(valueExpr.matchLength);
                 len += valueExpr.matchLength;
                 if (needBrackets && valueExpr.endWith) {
@@ -2669,6 +2514,7 @@ var Y;
         };
         return ObjectExpression;
     }(Expression));
+    ObjectExpression.patten = /^(?:\s*,)?\s*([a-zA-Z_][a-zA-Z0-9_\$]*)\s*:\s*/i;
     Y.ObjectExpression = ObjectExpression;
     var ComputedExpression = (function (_super) {
         __extends(ComputedExpression, _super);
@@ -2691,8 +2537,9 @@ var Y;
                     parnames += ",";
                 }
                 args += pars[n].toCode(context);
+                parnames += n;
             }
-            return "(function(" + parnames + "){return " + this.code + "})(" + args + ")";
+            return "(function(" + parnames + "){return " + this.code + ";})(" + args + ")";
         };
         ComputedExpression.prototype.getDeps = function (context, deps) {
             deps || (deps = []);
@@ -2731,10 +2578,10 @@ var Y;
             var lastAt = 0;
             var parCount = 0;
             while (true) {
-                var startAt = at = text.indexOf("{{", at);
+                var startAt = at = text.indexOf("<[", at);
                 if (startAt < 0)
                     break;
-                var endAt = at = text.indexOf("}}", at);
+                var endAt = at = text.indexOf("]>", at);
                 if (endAt < 0)
                     break;
                 var exptext = text.substring(startAt + 2, endAt).replace(Y.trimRegex, "");
@@ -2743,24 +2590,24 @@ var Y;
                 var exp = Expression.parse(exptext);
                 if (!exp || exp.type === ExpressionTypes.constant)
                     continue;
-                var ctext = toJsonString(text.substring(lastAt, startAt));
-                var argname = "__y_EMBEDED_ARGS_" + parCount++;
-                code += "\"" + ctext + "\" + " + argname;
+                var ctext_1 = toJsonString(text.substring(lastAt, startAt));
+                var argname = "__y_EMBEDED_ARGS_" + (parCount++);
+                code += "\"" + ctext_1.replace(ComputedExpression.labelPatten, "\"+$_context.label(\"$1\")+\"") + "\" + " + argname + "()";
                 pars[argname] = exp;
+                parCount++;
                 lastAt = at + 2;
             }
-            if (lastAt > 0) {
-                var ctext = toJsonString(text.substring(lastAt));
-                code += "\"" + ctext + "\";";
+            var ctext = text.substring(lastAt);
+            if (ComputedExpression.labelPatten.test(ctext)) {
+                code += "\"" + ctext.replace(ComputedExpression.labelPatten, "\"+$_context.label(\"$1\")+\"") + "\"";
             }
-            if (parCount > 0)
-                return new ComputedExpression(pars, code, text.length);
-            return null;
+            return code ? new ComputedExpression(pars, code, text.length) : null;
             //if(pars.length) return new ComputedExpression(pars,code);
         };
         return ComputedExpression;
     }(Expression));
     ComputedExpression.patten = /^\s*=>\s*/;
+    ComputedExpression.labelPatten = /##([^#\n\r\t]+)##/;
     Y.ComputedExpression = ComputedExpression;
     var BindExpression = (function (_super) {
         __extends(BindExpression, _super);
@@ -2784,26 +2631,29 @@ var Y;
             }
         };
         BindExpression.prototype.toLabelCode = function (context) {
-            return "context.element.innerHTML = " + this.expression.toCode(context) + ";\n";
+            return "$_element.innerHTML = " + this.expression.toCode(context) + ";\n";
         };
         BindExpression.prototype.toModelCode = function (context) {
-            //binders.value.call(context,context.element, context.$self.Username.$model);
-            return "context.getBinder(\"" + this.bindername + "\").call(context,context.element,context." + this.expression.toCode(context) + ",context);\n";
+            //binders.value.call(context,context.$element, context.$self.Username.$model);
+            return "$_context.getBinder(\"" + this.bindername + "\").call($_context,$_element," + this.expression.toCode(context) + ",$_context);\n";
         };
         BindExpression.prototype.toConstantCode = function (context) {
-            return "context.binders[" + this.bindername + "].call(context,context.element,new Y.ConstantBindableObject(" + this.expression.toCode(context) + "),context);\n";
+            return "$_context.getBinder[" + this.bindername + "].call($_context,$_element,new Y.ConstantBindableObject(" + this.expression.toCode(context) + "),$_context);\n";
         };
         BindExpression.prototype.toFuncCode = function (context) {
-            var deps = this.getDeps(context).join(",");
-            return "context.binders[" + this.bindername + "].call(context,context.element,new Y.BindDependences([" + deps + "],function(){ return " + this.expression.toCode(context) + "}),context);\n";
+            var deps = this.getDeps(context);
+            var depstr = deps ? deps.join(",") : "";
+            return "$_context.getBinder(\"" + this.bindername + "\").call($_context,$_element,new Y.BindDependences([" + depstr + "],function(){ return " + this.expression.toCode(context) + "}),$_context);\n";
         };
         BindExpression.prototype.toComputedCode = function (context) {
-            var deps = this.getDeps(context).join(",");
-            return "context.binders." + this.bindername + ".call(context,context.element,new Y.BindDependences([" + deps + "],function(){ return " + this.expression.toCode(context) + "}));\n";
+            var deps = this.getDeps(context);
+            var depstr = deps ? deps.join(",") : "";
+            return "$_context.getBinder(\"" + this.bindername + "\").call($_context,$_element,new Y.BindDependences([" + depstr + "],function(){ return " + this.expression.toCode(context) + "}),$_context);\n";
         };
         BindExpression.prototype.toObjectCode = function (context) {
-            var deps = this.getDeps(context).join(",");
-            return "context.binders." + this.bindername + ".call(context,new Y.BindDependences([" + deps + "],function(){ return " + this.expression.toCode(context) + "}));\n";
+            var deps = this.getDeps(context);
+            var depstr = deps ? deps.join(",") : "";
+            return "$_context.getBinder(\"" + this.bindername + "\").call($_context,new Y.BindDependences([" + depstr + "],function(){ return " + this.expression.toCode(context) + "}),$_context);\n";
         };
         return BindExpression;
     }(Expression));
@@ -2819,7 +2669,7 @@ var Y;
         }
         ChildBeginExpression.prototype.getDeps = function (context, deps) { return null; };
         ChildBeginExpression.prototype.toCode = function (context) {
-            return "context.element = context.element.childNodes[" + this.childAt + "];\n";
+            return "$_element = $_element.childNodes[" + this.childAt + "];\n";
         };
         return ChildBeginExpression;
     }(Expression));
@@ -2834,26 +2684,54 @@ var Y;
         }
         ChildEndExpression.prototype.getDeps = function (context, deps) { return null; };
         ChildEndExpression.prototype.toCode = function (context) {
-            return "context.element = context.element.parentNode;\n";
+            return "$_element = $_element.parentNode;\n";
         };
         return ChildEndExpression;
     }(Expression));
     Y.ChildEndExpression = ChildEndExpression;
-    Y._binders = {};
-    Y._binders["y-text"] = function (element, bindable, context) {
+    var ScopeBeginExpression = (function (_super) {
+        __extends(ScopeBeginExpression, _super);
+        function ScopeBeginExpression(scopeExpression) {
+            var _this = _super.call(this) || this;
+            _this.type = ExpressionTypes.scopeBegin;
+            _this.scopeExpression = scopeExpression;
+            return _this;
+        }
+        ScopeBeginExpression.prototype.toCode = function (context) {
+            return "$_scopes.push($_self); $_self = " + this.scopeExpression.toCode(context) + ";\n";
+        };
+        return ScopeBeginExpression;
+    }(Expression));
+    var ScopeEndExpression = (function (_super) {
+        __extends(ScopeEndExpression, _super);
+        function ScopeEndExpression() {
+            var _this = _super.call(this) || this;
+            _this.type = ExpressionTypes.scopeEnd;
+            return _this;
+        }
+        ScopeEndExpression.prototype.toCode = function (context) {
+            return "$_self = $_scopes.pop();\n";
+        };
+        return ScopeEndExpression;
+    }(Expression));
+    var binders = View.binders;
+    binders["y-scope"] = function () { };
+    binders["y-text"] = function (element, bindable, context) {
         bindable.subscribe(function (sender, evt) {
-            element.innerHTML = evt.value;
+            element.innerHTML = element.textContent = bindable.get_value();
         });
+        element.innerHTML = element.textContent = bindable.get_value();
     };
-    Y._binders["y-value"] = function (element, bindable, context) {
+    binders["y-value"] = function (element, bindable, context) {
         bindable.subscribe(function (sender, evt) {
-            element.value = evt.value;
+            element.value = bindable.get_value();
         });
         Y.platform.attach(element, "blur", function () {
-            bindable.setValue(element.value);
+            bindable.set_value(element.value);
         });
+        element.value = bindable.get_value();
     };
-    Y.binders = {
+    Y._binders = {
         "bibound.text": function (element, accessor) {
             var handler = function (sender, evt) { element.innerHTML = evt.value; };
             accessor.subscribe(handler);
@@ -3018,7 +2896,7 @@ var Y;
             return function () { accessor.unsubscribe(handler); };
         }
     };
-    var uniBinder = Y.binders["unibound"] = function (element, accessor, controller, extra) {
+    var uniBinder = Y._binders["unibound"] = function (element, accessor, controller, extra) {
         var setValue;
         if (element.tagName == "SELECT") {
             setValue = function (element, value) {
@@ -3050,7 +2928,7 @@ var Y;
         }
         return EachItemBindInfo;
     }());
-    var eachBinder = Y.binders["each"] = function (element, accessor, extra) {
+    var eachBinder = binders["each"] = function (element, accessor, extra) {
         var controller = extra;
         var model = accessor.$model;
         var eachId = element.getAttribute("y-each-view-id");
@@ -3063,8 +2941,8 @@ var Y;
             element.setAttribute("y-each-bind-id", eachId);
             var elemProto = Y.platform.cloneNode(element);
             var modelProto = model.itemProto().$model;
-            var bind = makeBind(modelProto, element, controller);
-            itemViewProto = new View(controller, modelProto, elemProto);
+            //let bind :IABind = makeBind(modelProto,element,controller);
+            //itemViewProto = new View(controller,modelProto,elemProto);
             controller.module.data["y-views"][eachId] = itemViewProto;
         }
         var addItemToView = function (item, anchorElement) {

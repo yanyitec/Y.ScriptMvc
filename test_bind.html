@@ -25,7 +25,10 @@
     <div id="layout" y-controller="layout,sys/sys.html">测试css加载</div>
     <div id="test_bind">
         <div>
-            <label y-text="#name#"></label><input type="text" y-value="$.Username" />
+            <label>##你好##,<[$.User.Username]></label>
+        </div>
+        <div y-scope="$.User">
+            <label y-text="#用户名#"></label><input type="text" y-value="$Username" />
         </div>
     </div>
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
@@ -38,14 +41,14 @@
     <script src="scripts/mvc.js"></script>
 
     <script>
-    var context = new Y.BindContext();
-    context.global_binders = Y._binders;
-    var model = context.$self = new Y.Model().$accessor;
-    context.local_binders = {};
-    var element = document.getElementById("test_bind");
-    var binder = Y.makeBinder(context,element);
-    binder(element,context.$self,context);
-    model.Username("yiy");
+    
+$(function(){
+  var view = new Y.View({
+      element:"#test_bind"
+    });
+    view.model.User.Username("yiy");
+});
+    
     </script>
   </body>
 </html>

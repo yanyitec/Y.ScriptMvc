@@ -1100,12 +1100,12 @@ export namespace Y {
             let view:View;
             let viewTemplate:View = this.data["y-controller-view"] as View;
             if(viewTemplate==null){
-                view = new View(controller,null,area);
-                this.data["y-controller-view"] = view.clone();
+                //view = new View(controller,null,area);
+                //this.data["y-controller-view"] = view.clone();
             }else{
-                view = viewTemplate.clone(controller, null, area) as View;
+                //view = viewTemplate.clone(controller, null, area) as View;
             }
-            controller.view = view;
+            //controller.view = view;
             controller.model = view.model.$accessor;
             return controller;
         }
@@ -1182,12 +1182,13 @@ export namespace Y {
     /// Model
     ////////////////////////////////////
     export interface IValuable{
-        setValue(newValue: any,source?:ModelEvent|number|boolean):any;
-        getValue():any;
+        set_value(newValue: any,source?:ModelEvent|number|boolean):IValuable;
+        get_value():any;
     }
-    export interface IModel {
-        subscribe(handler:IModelEventHandler):void;
-        unsubscribe(handler:IModelEventHandler):void;
+    export interface IModel extends IObservable,IValuable {
+        //subscribe(handler:IModelEventHandler):void;
+        //unsubscribe(handler:IModelEventHandler):void;
+        
         $model: Model;
         $modelType : ModelTypes;
         $accessor: IModelAccessor;
@@ -1238,17 +1239,26 @@ export namespace Y {
             let self :Model = this;
             let accessor: IModelAccessor  = <IModelAccessor>function(newValue?:any):any{
                 if (newValue === undefined) { return self._subject[self._name]; }
-                self.setValue(newValue);
+                self.set_value(newValue);
                 return accessor;
             };
             
-            accessor.subscribe = (handler: IModelEventHandler):void => {
+            accessor.subscribe = (handler: IModelEventHandler):IModel => {
                 self.subscribe(handler);
+                return accessor;
             };
-            accessor.unsubscribe = (handler: IModelEventHandler):void => {
+            accessor.unsubscribe = (handler: IModelEventHandler):IModel => {
                 self.unsubscribe(handler);
+                return accessor;
             };
-            accessor.toString =  ():string => { return self.getValue();}
+             accessor.get_value = ():any => {
+                return self.get_value();
+            };
+             accessor.set_value = (value:any,extra?:any):IValuable => {
+                self.set_value(value,extra);
+                return accessor;
+            };
+            accessor.toString =  ():string => { return self.get_value();}
             this.$model = accessor.$model = this;
             this.$accessor = accessor.$accessor = accessor;
             accessor.$modelType = this.$modelType = ModelTypes.any;     
@@ -1275,24 +1285,26 @@ export namespace Y {
                 return this._subject;
             }
             newSubject[this._name] = oldValue;
-            this.setValue(newValue,source);
+            this.set_value(newValue,source);
             
             return newSubject;
         }
         
         
-        public subscribe(handler: IModelEventHandler):void{
+        public subscribe(handler: IModelEventHandler):IModel{
             let handlers: IModelEventHandler[] = this._changeHandlers;
             if (!handlers) { handlers = this._changeHandlers = new Array<IModelEventHandler>(); }
             handlers.push(handler);
+            return this;
         }
-        public unsubscribe(handler: IModelEventHandler):void{
+        public unsubscribe(handler: IModelEventHandler):IModel{
             let handlers: IModelEventHandler[] = this._changeHandlers;
             if (!handlers) { return; }
             for (let i: number = 0, j: number = handlers.length; i < j; i++) {
                 let existed: IModelEventHandler = handlers.shift();
                 if (existed !== handler) { handlers.push(existed); }
-            }            
+            }      
+            return this;      
         }
         //触发事件
         private _notifyValuechange(evt: ModelEvent,ignoreSuperior?:boolean):void {
@@ -1317,8 +1329,8 @@ export namespace Y {
             
             
         }
-        public getValue(): any { return this._subject[this._name]; }
-        public setValue(newValue: any,source?:ModelEvent|number|boolean): any {
+        public get_value(): any { return this._subject[this._name]; }
+        public set_value(newValue: any,source?:ModelEvent|number|boolean): any {
             let subject: Object = this._subject;
             //得到原先的值
             let oldValue:any = subject[this._name];
@@ -1462,8 +1474,8 @@ export namespace Y {
                 args.pop();
             }
             this._computed = new Computed(this._superior.$accessor, args as Array<IModelAccessor>, fn);
-            this.getValue = () => this._computed.getValue();
-            this.setValue = () => { throw "Computed member is readonly."; };
+            this.get_value = () => this._computed.getValue();
+            this.set_value = () => { throw "Computed member is readonly."; };
             this.prop = () => { throw "Computed member can not define member."; };
             this.$accessor.$modelType = this.$modelType = ModelTypes.computed;
             return this;
@@ -1480,7 +1492,7 @@ export namespace Y {
                 if(!(itemProto instanceof Model)) itemProto = new Model(itemProto); 
             }
             this._itemProto = itemProto as Model;
-            this .itemProto = ():Model=>{return this._itemProto;};
+            (this as Model).itemProto = ():Model=>{return this._itemProto;};
             (itemProto as Model)._superior = this;
             
             let accessor: IModelAccessor = this.$accessor;
@@ -1616,7 +1628,7 @@ export namespace Y {
             let itemModel: Model = members[index];
 
             if (itemModel !== undefined) {
-                itemModel.setValue(itemValue,index);
+                itemModel.set_value(itemValue,index);
             } else {
                 let oldItemValue: any = value[index];
                 let action :ModelActions = index>=value.length?ModelActions.add:ModelActions.change;
@@ -1695,7 +1707,7 @@ export namespace Y {
     /////////////////////////////////////////////////
     // View
     //////////////////////////////////////////////////
-    export class View implements IView{
+    export class View1 implements IView{
         element:HTMLElement;
         _html:string;
         model:Model;
@@ -1706,11 +1718,11 @@ export namespace Y {
             this.element = element;
             this.model = model ||(model= new Model());
             this.controller = controller;
-            this._bind = makeBind(this.model,this.element,this.controller);
+            //this._bind = makeBind(this.model,this.element,this.controller);
         }
         clone(controller?:IController,model?:Model,element?:HTMLElement):IView{
-            let other:View =  new View();
-            let proto:View = this;
+            let other:View1 =  new View1();
+            let proto:View1 = this;
             let elem:HTMLElement = platform.cloneNode(proto.element);
             if(element){
                 element.innerHTML = "";
@@ -1743,22 +1755,7 @@ export namespace Y {
     export interface IABind{
         (modelOrContext:Model|ABindContext,element?:HTMLElement,controller?:IController,extra?:any):void;
     }
-    export function makeBind(model:Model,element:HTMLElement,controller:IController):IABind{
-        let bindContext :ABindContext = new ABindContext(model,element,controller);
-        let exprs :Array<BExpression> = [];
-        buildBind(element,bindContext,exprs);
-        while(true){
-            let expr:BExpression = exprs.pop();
-            if(!(expr instanceof aChildEndExpression)){
-                exprs.push(expr);
-                break;
-            }
-        }
-        var codes = exprs.join("");
-        codes = "var $self = self.$accessor;\nvar $root = self.root().$accessor;var _binders = Y.binders;\nvar _scopes=[];var attach=Y.platform.attach;var detech = Y.platform.detech;" + codes;
-        return new Function("self","_element","_controller",codes) as IABind;
-
-    }
+    
     
     export class ABindContext{
         
@@ -1771,7 +1768,7 @@ export namespace Y {
         constructor(root:Model,element:HTMLElement,controller:IController){
             this.$self = this.$root = root.$accessor;
             this._element = element;
-            this._binders = binders;
+            //this._binders = binders;
             this._controller = controller;
             this._scopes = [];
         }
@@ -1783,68 +1780,9 @@ export namespace Y {
 
         toCode():string{throw "abstract function";}
     }
-    class ScopeBeginExpression extends BExpression{
-        modelPath:string;
-        constructor(modelPath:string,context:ABindContext){
-            super();
-            var result = defineModel(modelPath,context);
-            this.modelPath = result.path;
-            this.bind = (context:ABindContext):void=>{
-                context._scopes.push(context.$self);
-                context.$self = result.model.$accessor;
-                
-            }
-            //this.childAt = at;
-        }
-        toString():string{
-            return "_scopes.push($self);\n$self = " + this.modelPath + ";\n";
-        }
-    }
-    class ScopeEndExpression extends BExpression{
-        modelPath:string;
-        constructor(){
-            super();
-            this.bind = (context:ABindContext):void=>{
-                context.$self = context._scopes.pop();
-            }
-            //this.childAt = at;
-        }
-        toString():string{
-            return "$self = _scopes.pop();\n";
-        }
-    }
+    
 
-    class aChildBeginExpression extends BExpression{
-        childAt:number;
-        element:HTMLElement;
-        constructor(at:number,element:HTMLElement){
-            super();
-            this.childAt = at;
-            this.element = element;
-            this.bind = (context:ABindContext):void=>{
-                context._element = context._element.childNodes[at] as HTMLElement;
-            }
-            //this.childAt = at;
-        }
-        toString():string{
-            return "_element = _element.childNodes["+this.childAt+"];\n";
-        }
-    }
-    class aChildEndExpression extends BExpression{
-        childAt:number;
-        constructor(at:number){
-            super();
-            this.childAt = at;
-            this.bind = (context:ABindContext):void=>{
-                context._element = context._element.parentNode as HTMLElement;
-            }
-            //this.childAt = at;
-        }
-        toString():string{
-            return "_element = _element.parentNode;\n";
-        }
-
-    }
+    
 
     class UniboundExpression extends BExpression{
         modelPath:string;
@@ -1902,21 +1840,7 @@ export namespace Y {
         }
     }
 
-    class aLabelExpression extends BExpression{
-        attr : string;
-        key:string;
-        constructor(key:string,element:HTMLElement,attr:string="textContent"){
-            super();
-            this.key = key;
-            this.attr = attr;
-            this.bind = (context:ABindContext)=>{
-                element[attr] = context._controller._TEXT(key);
-            };
-        }
-        toString():string{
-            return "_element[\""+this.attr+"\"]=_controller._TEXT(\"" + this.key + "\");\n";
-        }
-    }
+    
     class EventExpression extends BExpression{
         
         actionName:string;
@@ -1985,130 +1909,8 @@ export namespace Y {
 
     
     
-    function buildBind(element:HTMLElement,context: ABindContext,exprs:Array<BExpression>):void{
-        let tagName:string = element.tagName;
-        if(!tagName){
-            var html = element.textContent;
-            if(tryBuildLabel(html,element,context,exprs))return;
-            if(tryBuildUniBound(html,element,context,exprs,"textContent" )) return;
-            return;
-        }
-        var elementValue = (element as HTMLInputElement).value;
-        if(elementValue) {
-            tryBuildLabel(elementValue,element,context,exprs,"value");
-            tryBuildUniBound(elementValue,element,context,exprs,"value");
-            tryBuildBiBound(elementValue,element,context,exprs); 
-        }
-        let eachAttr: string;
-        let scopeAttr:string;
-        
-        
-        for(var n in binders){
-            
-            var attr = element.getAttribute(n);
-            if(!attr) continue;
-            if(n=="y-scope" || n=="scope") {scopeAttr =attr ;continue;}
-            if(n=="y-each" || n=="each"){eachAttr = attr;continue;}
-            if(tryBuildUniBound(attr,element,context,exprs )) continue; 
-            
-            if(tryBuildEventBound(attr,n,element,context,exprs )) continue;         
-        }
-        if(!element.hasChildNodes()) return;
-        if(eachAttr){
-            var eachExpr:EachExpression= new EachExpression(eachAttr,context);
-            eachExpr.bind(context);
-            exprs.push(eachExpr);
-            return;
-        }
-        var children = element.childNodes;
-        if(scopeAttr){
-            let scopeBegin :ScopeBeginExpression = new ScopeBeginExpression(scopeAttr,context);
-            scopeBegin.bind(context);
-            exprs.push(scopeBegin);
-        }
-        
-        for(let i:number=0,j:number = element.childNodes.length;i<j;i++){
-            let child:HTMLElement = element.childNodes[i] as HTMLElement;
-            let startExpr:aChildBeginExpression = new  aChildBeginExpression(i,element);
-            startExpr.bind(context);
-            exprs.push(startExpr);
-            buildBind(child,context,exprs);
-            let endExpr:aChildEndExpression = new aChildEndExpression(i);
-            endExpr.bind(context);
-            var last:aChildBeginExpression = exprs.pop() as aChildBeginExpression;
-            if(last.childAt!==i || last.element!=element) {
-                exprs.push(last); 
-                
-                exprs.push(endExpr);
-            }
-            
-        }
-        if(scopeAttr){
-            let lastExpr :BExpression = exprs.pop();
-            if(!(lastExpr instanceof ScopeBeginExpression)) {
-                exprs.push(lastExpr);
-                let scopeEnd:ScopeEndExpression = new ScopeEndExpression();
-                scopeEnd.bind(context);
-                exprs.push(scopeEnd);
-            }
-        }
-        
-
-    }
-    function tryBuildLabel(exprText:string,element:HTMLElement,context: ABindContext,exprs:Array<BExpression>,attrName:string="textContent"):boolean{
-        var match:RegExpMatchArray = exprText.match(labelReg);
-        if(match!=null){
-            let text:string = match[1];
-            let expr :aLabelExpression = new aLabelExpression(text,element,attrName);
-            expr.bind(context);
-            exprs.push(expr);
-            return true;
-        }
-        return false;
-    }
-    //单向绑定
-    function tryBuildUniBound(exprText:string,element:HTMLElement,context: ABindContext,exprs:Array<BExpression>,attrName:string="value"):boolean{
-        if(!exprText) return false;
-        var match:RegExpMatchArray = exprText.match(textReg);
-        if(match!=null){
-            let path:string = match[1];
-            let expr :UniboundExpression = new UniboundExpression(path,context,attrName);
-            expr.bind(context);
-            exprs.push(expr);
-            return true;
-        }
-        return false;
-    }
-    //双向绑定
-    function tryBuildBiBound(exprText:string,element:HTMLElement,context: ABindContext,exprs:Array<BExpression>):boolean{
-        let bindname = getBindName(element);
-        if(bindname=="checkbox" || bindname=="radio"){
-            exprText = (element as HTMLInputElement).getAttribute("checked");
-        } 
-        if(!exprText) return false;
-        let match:RegExpMatchArray = exprText.match(valueReg);
-        if(match!=null){
-            let path:string = match[1];
-            let expr :BinderExpression = new BinderExpression(path,"bibound." + bindname,context,context._controller);
-            expr.bind(context);
-            exprs.push(expr);
-            return true;
-        }
-        return false;
-    }
-    //事件绑定
-    function tryBuildEventBound(exprText:string,evtName:string,element:HTMLElement,context: ABindContext,exprs:Array<BExpression>):boolean{
-        var match:RegExpMatchArray = exprText.match(eventReg);
-        if(match!=null){
-            let actionName:string = match[1];
-            evtName = evtName.indexOf("y-")==0?evtName.substr(2):evtName;
-            let expr :EventExpression = new EventExpression(evtName,actionName);
-            expr.bind(context);
-            exprs.push(expr);
-            return true;
-        }
-        return false;
-    }
+   
+    
 
     function getBindName(element:HTMLElement):string{
         let bindname :string = null;
@@ -2136,37 +1938,174 @@ export namespace Y {
             deps.setValue(element.value);
         });
     }
+    export class ViewOpts{
+        element:HTMLElement;
+        controller?:{};
+        modelValue?:{};
+        prototypeView?:View;
+        nobind:boolean;
+    }
+    export class View{
+        controller:any;
+        model :IModelAccessor; 
+        global_binders:{[index:string]:IBinder};
+        local_binders:{[index:string]:IBinder};
+        element:HTMLElement;
+        protected _binder:IBinder;
+        
+
+        constructor(opts:ViewOpts){
+            let elem = this.element =platform.getElement(opts.element);
+            let existed = this.element["y-bind-view"] as View;
+            if(existed) existed.dispose();
+            let controller:any = this.controller = opts.controller||{};
+            this.global_binders = View.binders;
+            this.local_binders = controller._binders||{};
+            
+            
+            if(this.controller.TEXT) this.label = (key:string):string =>controller.TEXT.call(controller,key);
+            let protoView= opts.prototypeView;
+            if(!protoView){
+                controller.model = this.model = new Model("$",{"$":opts.modelValue||{}}).$accessor;
+                this._binder = this.makeBinder();
+            }else{
+                this.element.innerHTML = protoView.element.innerHTML;
+                controller.model = this.model = protoView.model.$model.clone({"$":opts.modelValue||{}}).$accessor;
+                this._binder = protoView._binder;
+            }
+            if(!opts.nobind) this.bind();
+        }
+        bind(value?:any):View{
+            if(value) this.model(value);
+            if(this.element["y-bind-view"]) return this;
+            this._binder(this.element,this.model,this);
+            return this.element["y-bind-view"] = this;
+        }
+        
+        getFunc(fname:string):Function{
+            let fn = this.controller[fname];
+            if(fn && typeof fn==="function")return fn;
+            return null;
+        }
+        label(key:string):string{
+            let text:string;
+            let ctrlr = this.controller;
+            if(!ctrlr) return key;
+            if(ctrlr._labels) text = ctrlr._labels[key];
+            if(text===undefined)if(ctrlr.module) text = ctrlr.module.label(key);
+            if(text===undefined) return key;
+        }
+        getBinder(name:string){
+            return this.local_binders[name]|| this.global_binders[name];
+        }
+        makeBinder():IBinder{
+            let exprs:Expression[] = [];
+            parseElement(this,this.element,exprs,true);
+            while(true){
+                let last = exprs.pop();
+                if(!last) break;
+                if((<ChildBeginExpression>last).childAt===undefined &&  !(<ChildBeginExpression>last).parentNode){
+                    exprs.push(last);break;
+                }
+            }
+            let code ="";
+            for(let i=0,j=exprs.length;i<j;i++){
+                code += exprs[i].toCode(this);
+            }
+            //(this:BindContext,element:HTMLElement,bindable:IBindable):void;
+            code = "var $_scopes= [];\n" + code;
+            let binder = new Function("$_element","$_self","$_context",code) as IBinder;
+            return binder ; 
+        }
+        dispose():void{
+
+        }
+        static readonly funcs:{[index:string]:Function}={};
+        static readonly binders :{[index:string]:IBinder}={};
+        
+    }  
+    function parseElement(context:View,element:HTMLElement,expressions:Expression[],igoneSelf?:boolean){
+        let each:Expression;
+        let controller:Expression;
+        let scope:ModelExpression;
+        let ui :Expression;
+        if(!igoneSelf){
+            if(element.nodeType==3){
+                let embededExpr = ComputedExpression.embeded(element.nodeValue);
+                if(embededExpr)   expressions.push(new BindExpression("y-text",embededExpr));
+                return;
+            }
+            
+            let attrs = element.attributes;
+            for(let i =0,j=attrs.length;i<j;i++){
+                let attr = attrs[i];
+                let attrname = attr.name;
+                let attrvalue = attr.value;
+                let binder = context.global_binders[attrname];
+                if(!binder) binder = context.local_binders[attrname];
+                if(!binder) continue;
+                let expr = Expression.parse(attrvalue);
+                if(!expr) continue;
+                switch(attrname){
+                    case "y-each":each = expr;continue;
+                    case "y-controller":controller = expr;continue;
+                    case "y-scope":if(expr.type == ExpressionTypes.model)scope = expr as ModelExpression;continue;
+                    case "y-ui":ui = expr;continue;
+                }
+                expr = new BindExpression(attrname,expr);
+                expressions.push(expr);
+            }
+        }
+        
+        if(!element.hasChildNodes) return; 
+
+        if(scope) expressions.push(new ScopeBeginExpression(scope));
+        let nodes = element.childNodes;
+        for(let i =0,j=nodes.length;i<j;i++){
+            let node = nodes[i];
+            expressions.push(new ChildBeginExpression(i,element as HTMLElement));
+            parseElement(context,node as HTMLElement , expressions);
+            let last = expressions.pop() as ChildBeginExpression;
+            if(last.childAt!=i || last.parentNode!=element){
+                expressions.push(last);
+                expressions.push(new ChildEndExpression(i,element));
+            }
+        }
+        if(scope) expressions.push(new ScopeEndExpression());
+    }
     export interface IBindable extends IValuable,IObservable{};
     export class ConstantBindableObject implements IBindable{
         value:any;
         constructor(value:any){
             this.value = value;
         }
-        getValue(){return this.value;}
-        setValue(val:any,extra?:any){return this;}
+        get_value(){return this.value;}
+        set_value(val:any,extra?:any){return this;}
         subscribe(event:string|Function,handler?:Function):IObservable{return this;}
         unsubscribe(event:string|Function,handler?:Function):IObservable{return this;}
 
     }
     export class BindDependences implements IBindable{
         deps:IObservable[];
-        constructor(deps:IObservable[]|IModel, getter){
-            if(!deps){
-                this.getValue = getter;
-                this.setValue = (value:any,extra?:any):any=>{ throw new Error("多个依赖项不可以设置值，它是只读的");}
+        constructor(deps:IBindable[]|IBindable, getter){
+            if(!deps || (<IObservable[]>deps).length===0){
+                this.get_value = getter;
+                this.set_value = (value:any,extra?:any):any=>{ throw new Error("多个依赖项不可以设置值，它是只读的");}
                 this.subscribe = this.unsubscribe = (handler:Function):any=>{}
                 return;
             }
             let isArr = isArray(deps);
-            if(isArr && (<IObservable[]>deps).length==0){isArr=false; deps = deps[0];}
+            if(isArr){
+                if((<IObservable[]>deps).length==0 && (<IObservable[]>deps).length==1){isArr = false;deps = deps[0];}
+            }
             if(!isArr){
-                this.getValue = ():any=> (<Model>deps).getValue();
-                this.setValue = (value:any,extra?:any):any=>(<Model>deps).setValue(value,extra);
-                this.subscribe = (handler:Function):any =>(<Model>deps).subscribe(handler as IModelEventHandler);
-                this.unsubscribe = (handler:Function):any =>(<Model>deps).unsubscribe(handler as IModelEventHandler);
+                this.get_value = ():any=> (<IBindable>deps).get_value();
+                this.set_value = (value:any,extra?:any):any=>(<IBindable>deps).set_value(value,extra);
+                this.subscribe = (handler:Function):any =>(<IBindable>deps).subscribe(handler );
+                this.unsubscribe = (handler:Function):any =>(<IBindable>deps).unsubscribe(handler);
             }else{
                 this.deps = deps as IObservable[];
-                this.getValue = getter;
+                this.get_value = getter;
                 this.subscribe = (handler:Function)=>{
                     for(let i=0,j=(<IObservable[]>deps).length;i<j;i++){
                         (deps[i] as IObservable).subscribe(handler);
@@ -2179,93 +2118,16 @@ export namespace Y {
                     }
                     return this;
                 }
-                this.setValue = (value:any,extra?:any):any=>{ throw new Error("多个依赖项不可以设置值，它是只读的");}
+                this.set_value = (value:any,extra?:any):any=>{ throw new Error("多个依赖项不可以设置值，它是只读的");}
             }
         }
         subscribe:(event:string|Function,handler?:Function)=>IObservable;
         unsubscribe:(event:string|Function,handler?:Function)=>IObservable;
-        getValue:()=>any;
-        setValue:(value:any,extra?:any)=>any;
+        get_value:()=>any;
+        set_value:(value:any,extra?:any)=>any;
 
     }
-    export class BindContext{
-        $self:IModelAccessor;
-        global_binders:{[index:string]:IBinder};
-        local_binders:{[index:string]:IBinder};
-        element:HTMLElement;
-        getFunc(name:string){return null;}
-        label(key:string){return key;}
-        getBinder(name:string){
-            return this.local_binders[name]|| this.global_binders[name];
-        }
-    }
-    export interface IBinder{
-        (element:HTMLElement,bindable:IBindable,context?:BindContext,initValue?:boolean):void;
-    }
-    
-    function parseElement(context:BindContext,element:HTMLElement,expressions:Expression[]){
-        if(element.nodeType==3){
-            let embededExpr = ComputedExpression.embeded(element.nodeValue);
-            if(embededExpr)   expressions.push(new BindExpression("y-text",embededExpr));
-            return;
-        }
-        let each:Expression;
-        let controller:Expression;
-        let scope:Expression;
-        let ui :Expression;
-        let attrs = element.attributes;
-        for(let i =0,j=attrs.length;i<j;i++){
-            let attr = attrs[i];
-            let attrname = attr.name;
-            let attrvalue = attr.value;
-            let binder = context.global_binders[attrname];
-            if(!binder) binder = context.local_binders[attrname];
-            if(!binder) continue;
-            let expr = Expression.parse(attrvalue);
-            if(!expr) continue;
-            expr = new BindExpression(attrname,expr);
-            switch(attrname){
-                case "y-each":each = expr;continue;
-                case "y-controller":controller = expr;continue;
-                case "y-scope":scope = expr;continue;
-                case "y-ui":ui = expr;continue;
-            }
-            expressions.push(expr);
-        }
-        if(!element.hasChildNodes) return; 
-        let nodes = element.childNodes;
-        for(let i =0,j=nodes.length;i<j;i++){
-            let node = nodes[i];
-            expressions.push(new ChildBeginExpression(i,element as HTMLElement));
-            parseElement(context,node as HTMLElement , expressions);
-            let last = expressions.pop() as ChildBeginExpression;
-            if(last.childAt!=i || last.parentNode!=element){
-                expressions.push(last);
-                expressions.push(new ChildEndExpression(i,element));
-            }
-        }
-    }
-    export function makeBinder(context:BindContext,element:HTMLElement):IBinder{
-        let exprs:Expression[] = [];
-        parseElement(context,element,exprs);
-        while(true){
-            let last = exprs.pop();
-            if(!last) break;
-            if((<ChildBeginExpression>last).childAt===undefined &&  !(<ChildBeginExpression>last).parentNode){
-                exprs.push(last);break;
-            }
-        }
-        let code ="";
-        for(let i=0,j=exprs.length;i<j;i++){
-            code += exprs[i].toCode(context);
-        }
-        //(this:BindContext,element:HTMLElement,bindable:IBindable):void;
-        code = "context.element = element;context.$self = bindable;\n" + code;
-        let binder = new Function("element","bindable","context",code) as IBinder;
-        return binder ; 
-    }
-
-    
+     
     export enum ExpressionTypes{
         //固定表达式  y-controller='user,http://pro.com/user' y-click="onsubmit"
         constant,
@@ -2275,22 +2137,16 @@ export namespace Y {
         label,
         //函数表达式  contains($Permission,$ROOT.Check,startTime)
         function,
+        //对象表达式
         object,
-        key,
         //计算表达式 (price:$.Price,qty:Quanity)=>price*qty;
         computed,
-        //嵌入表达式 Hi,{{$.Name}},now is {{date($.AccountingDate)}}
-        //embeded,
-        
         //绑定
         bind,
         childBegin,
         childEnd,
-        
-       
-        //多个
-        //url:$.url,name:mycontrol,dodo:date($.date,abc)
-        
+        scopeBegin,
+        scopeEnd        
 
     }
     export interface ParseExpressionOpts{
@@ -2302,9 +2158,9 @@ export namespace Y {
     export class Expression{
         type:ExpressionTypes;   
         matchLength:number; 
-        getDeps(context:BindContext,deps?:string[]):string[]{throw new Error("Not implement");}
+        getDeps(context:View,deps?:string[]):string[]{throw new Error("Not implement");}
         
-        toCode(context:BindContext):string{return null;}
+        toCode(context:View):string{return null;}
         static parse(text:string,opts?:ParseExpressionOpts):Expression{
             let expr :Expression;
             if(expr = LabelExpression.parse(text)) return expr;
@@ -2325,9 +2181,9 @@ export namespace Y {
             this.value = value;
             this.matchLength = len;
         }
-        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
+        getDeps(context:View,deps?:string[]):string[]{return null;}
 
-        toCode(context:BindContext):string{
+        toCode(context:View):string{
             if(this.value===null) return "null";
             if(this.value===undefined) return "undefined";
             return  "\"" + toJsonString(this.value) + "\"";
@@ -2378,38 +2234,39 @@ export namespace Y {
             this.names =names;
         }
         _path:string;
-        getPath(context:BindContext):string{
+        getPath(context:View):string{
             if(this._path) return this._path;
-            let curr = context.$self.$model;
+            let curr = context.model.$model;
             let names = this.names.split(".");
-            let rs :string[]=["$self"];
+            let rs :string[]=["$_self"];
             for(let i=0,j=names.length;i<j;i++){
                 let name = names[i].replace(trimRegex,"");
                 if(!name) throw new Error("Invalid model path : " + names.join("."));
                 if(name=="$root" || name=="$"){
                     curr = curr.root();
-                    rs = ["$self.$model.root().$accessor"];
+                    rs = ["$_self.$model.root().$accessor"];
                 }else if(name=="$parent"){
                     curr= curr.container();
-                    rs.push("$model.container().$accessor")
+                    rs.push("$_self.container().$accessor")
                 }else if(name == "$self"){
                     curr = curr;
                 }else{
+                    if(i==0) name = name.replace(/^\$/,"");
                     curr = curr.prop(name,{});
                     rs.push(name);
                 } 
             }
-            return this._path = rs.join(".");
+            return this._path =  rs.join(".");
             
         }
-        getDeps(context:BindContext,deps?:string[]):string[]{
+        getDeps(context:View,deps?:string[]):string[]{
             deps||(deps=[]);
             deps.push(this.getPath(context));
             return deps;
         }
 
-        toCode(context:BindContext):string{
-            return  this.getPath(context) + ".$model";
+        toCode(context:View):string{
+            return  this.getPath(context);
         } 
         static patten:RegExp = /^\s*\$(?:[a-zA-Z][a-zA-Z0-9_\$]*)?(?:\s*\.[a-zA-Z_\$][a-zA-Z0-9_\$]*)*\s*/i;
         static parse(text:string,opts?:ParseExpressionOpts):ModelExpression{
@@ -2432,12 +2289,12 @@ export namespace Y {
             this.key = key;
             this.matchLength = len;
         }
-        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
+        getDeps(context:View,deps?:string[]):string[]{return null;}
             
-        toCode(context:BindContext):string{
-            return `context.label("${this.key}")`;
+        toCode(context:View):string{
+            return `$_context.label("${this.key}")`;
         }
-        static patten :RegExp = /^#([^#]+)#/i;
+        static patten :RegExp = /^#([^#\n\r\t]+)#/;
         static parse(text:string,opts?:ParseExpressionOpts):LabelExpression{
             
             let matches = text.match(LabelExpression.patten);
@@ -2455,7 +2312,7 @@ export namespace Y {
             this.matchLength = len;
         }
 
-        getDeps(context:BindContext,deps?:string[]):string[]{
+        getDeps(context:View,deps?:string[]):string[]{
             deps||(deps=[]);
             let c = deps.length;
             for(let i=0,j=this.arguments.length;i<j;i++){
@@ -2498,8 +2355,8 @@ export namespace Y {
             return new FunctionExpression(fnname,args,len);
             //if(end===")")
         }
-        toCode(context:BindContext):string{
-            let code:string = "context.getFunc(\"" + this.funname + "\")(";
+        toCode(context:View):string{
+            let code:string = "$_context.getFunc(\"" + this.funname + "\")(";
             for(let i=0,j=this.arguments.length;i<j;i++){
                 code += this.arguments[i].toCode(context);
                 if(i!=0) code+= ",";
@@ -2507,25 +2364,7 @@ export namespace Y {
             return code += ")";
         } 
     }
-    export class KeyExpression extends Expression{
-        key:string;
-        constructor(key:string,len:number){
-            super();
-            this.type = ExpressionTypes.constant;
-            this.key = key;
-            this.matchLength = len;
-        }
-        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
-
-        toCode(context:BindContext):string{
-            return null;
-        } 
-        static patten:RegExp=/^(?:\s*,)?\s*([a-zA-Z_][a-zA-Z0-9_\$]*)\s*:\s*/i;
-        static parse(text:string):KeyExpression{
-            let matches = text.match(KeyExpression.patten);
-            return matches?new KeyExpression(matches[1],matches[0].length):null;
-        }
-    }
+    
     export class ObjectExpression extends Expression{
         members:{[index:string]:Expression}
         constructor(members:{[index:string]:Expression},matchLength:number){
@@ -2534,11 +2373,27 @@ export namespace Y {
             this.members = members;
             this.matchLength = matchLength;
         }
-        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
+        getDeps(context:View,deps?:string[]):string[]{
+            let members = this.members;
+            deps||(deps=[]);
+            let count=0;
+            for(let n in members){
+                let dep = members[n].getDeps(context,deps);
+                if(dep) count++;
+            }
+            return count?deps:null;
+        }
 
-        toCode(context:BindContext):string{
-            return null;
+        toCode(context:View):string{
+            let code ="{";
+            let members = this.members;
+            for(let n in members){
+                if(code.length!=1) code += ",";
+                code += "\"" + n + "\":" + members[n].toCode(context);
+            }
+            return code + "}";
         } 
+        static patten:RegExp=/^(?:\s*,)?\s*([a-zA-Z_][a-zA-Z0-9_\$]*)\s*:\s*/i;
         static parse(text:string , opts?:ParseExpressionOpts):ObjectExpression{
             if(!text) return null;
 
@@ -2582,18 +2437,25 @@ export namespace Y {
             }
             let obj :{[index:string]:Expression};
             while(true){
-                let keyExpr:KeyExpression = KeyExpression.parse(text);
-                if(!keyExpr) {
+                let keyMatches = text.match(ObjectExpression.patten);
+                //let keyExpr:KeyExpression = KeyExpression.parse(text);
+                if(!keyMatches) {
                     if(needBrackets) throw new Error("不正确的Object表达式,无法分析出key:" + text);
                     break;
                 }
-                text = text.substr(keyExpr.matchLength);
-                len += keyExpr.matchLength;
-                if(!text)break;
+                let keyLen  = keyMatches[0].length;
+                let key =keyMatches[1];
+                text = text.substr(keyLen);
+                len += keyLen;
+                if(!text){
+                    if(needBrackets) return null;
+                    (obj||(obj={}))[key] = new ConstantExpression("",0);
+                    return new ObjectExpression(obj,len);
+                }
                 
                 let valueExpr = Expression.parse(text,{constantEndPatten:constEndPatten,objectBrackets:true});
                 if(!valueExpr)break;
-                (obj||(obj={}))[keyExpr.key] = valueExpr;
+                (obj||(obj={}))[key] = valueExpr;
                 text = text.substr(valueExpr.matchLength);
                 len += valueExpr.matchLength;
                 if(needBrackets && (<ConstantExpression>valueExpr).endWith){
@@ -2618,7 +2480,7 @@ export namespace Y {
         }
         private _func:Function;
        
-        toCode(context:BindContext):string{
+        toCode(context:View):string{
             let args ="";
             let parnames = "";
             let pars = this.parameters;
@@ -2626,10 +2488,11 @@ export namespace Y {
             for(let n in pars){
                 if(at!=0) {args +=",";parnames+=",";}
                 args+= pars[n].toCode(context);
+                parnames+=n;
             }
-            return `(function(${parnames}){return ${this.code}})(${args})`;
+            return `(function(${parnames}){return ${this.code};})(${args})`;
         }
-        getDeps(context:BindContext,deps?:string[]):string[]{
+        getDeps(context:View,deps?:string[]):string[]{
             deps||(deps=[]);
             let c = deps.length;
             let pars = this.parameters;
@@ -2656,6 +2519,7 @@ export namespace Y {
             return new ComputedExpression((<ObjectExpression>paramExpr).members,code,len);
             //ObjectExpression.parse();
         }
+        static labelPatten:RegExp = /##([^#\n\r\t]+)##/;
         static embeded(text:string):ComputedExpression{
             let pars :{[index:string]:Expression} = {};
             let code = "";
@@ -2663,9 +2527,9 @@ export namespace Y {
             let lastAt = 0;
             let parCount=0;
             while(true){
-                let startAt =at = text.indexOf("{{",at);
+                let startAt =at = text.indexOf("<[",at);
                 if(startAt<0)break;
-                let endAt =at = text.indexOf("}}",at);
+                let endAt =at = text.indexOf("]>",at);
                 if(endAt<0) break;
                 let exptext = text.substring(startAt + 2,endAt).replace(trimRegex,"");
                 if(!exptext) continue;
@@ -2673,20 +2537,22 @@ export namespace Y {
                 
                 if(!exp || exp.type === ExpressionTypes.constant)continue;
                 let ctext = toJsonString(text.substring(lastAt,startAt));
-                let argname ="__y_EMBEDED_ARGS_" + parCount++;
-                code += "\"" + ctext + "\" + " + argname;
+                let argname ="__y_EMBEDED_ARGS_" + (parCount++);
+                code += "\"" + ctext.replace(ComputedExpression.labelPatten,"\"+$_context.label(\"$1\")+\"") + "\" + " + argname + "()";
                 pars[argname] = exp;
+                parCount++;
                 lastAt = at +2;
             }
-            if(lastAt>0) {
-                let ctext = toJsonString(text.substring(lastAt));
-                code += "\"" + ctext + "\";";
+            let ctext = text.substring(lastAt);
+            if(ComputedExpression.labelPatten.test(ctext)){
+                code += "\"" + ctext.replace(ComputedExpression.labelPatten,"\"+$_context.label(\"$1\")+\"") + "\"";
             }
-            if(parCount>0) return new ComputedExpression(pars,code,text.length);
-            return null;
+            
+            return code?new ComputedExpression(pars,code,text.length):null;
+            
             //if(pars.length) return new ComputedExpression(pars,code);
-
         }
+        
     }
     export class BindExpression extends Expression{
         bindername:string;
@@ -2697,9 +2563,9 @@ export namespace Y {
             this.bindername = name;
             this.expression = expr;
         }
-        getDeps(context:BindContext,deps?:string[]):string[]{return this.expression.getDeps(context,deps);}
+        getDeps(context:View,deps?:string[]):string[]{return this.expression.getDeps(context,deps);}
             
-        toCode(context:BindContext):string{
+        toCode(context:View):string{
             switch(this.expression.type){
                 case ExpressionTypes.model:return this.toModelCode(context);
                 case ExpressionTypes.constant:return this.toConstantCode(context);
@@ -2710,29 +2576,32 @@ export namespace Y {
                 default:throw new Error("Not implement");
             }
         }   
-        toLabelCode(context:BindContext):string{
-            return `context.element.innerHTML = ` +this.expression.toCode(context) + ";\n";
+        toLabelCode(context:View):string{
+            return `$_element.innerHTML = ` +this.expression.toCode(context) + ";\n";
         }
-        toModelCode(context:BindContext):string{
-            //binders.value.call(context,context.element, context.$self.Username.$model);
-            return  `context.getBinder("${this.bindername}").call(context,context.element,context.`+ this.expression.toCode(context) + ",context);\n";
+        toModelCode(context:View):string{
+            //binders.value.call(context,context.$element, context.$self.Username.$model);
+            return  `$_context.getBinder("${this.bindername}").call($_context,$_element,`+ this.expression.toCode(context) + ",$_context);\n";
         } 
-        toConstantCode(context:BindContext):string{
-            return  `context.binders[${this.bindername}].call(context,context.element,new Y.ConstantBindableObject(`+this.expression.toCode(context)+"),context);\n";
+        toConstantCode(context:View):string{
+            return  `$_context.getBinder[${this.bindername}].call($_context,$_element,new Y.ConstantBindableObject(`+this.expression.toCode(context)+"),$_context);\n";
         } 
-        toFuncCode(context:BindContext):string{
-            var deps = this.getDeps(context).join(",");
-            return  `context.binders[${this.bindername}].call(context,context.element,new Y.BindDependences([${deps}],function(){ return `+ this.expression.toCode(context) + "}),context);\n";
+        toFuncCode(context:View):string{
+            let deps = this.getDeps(context);
+            let depstr = deps? deps.join(","):"";
+            return  `$_context.getBinder("${this.bindername}").call($_context,$_element,new Y.BindDependences([${depstr}],function(){ return `+ this.expression.toCode(context) + "}),$_context);\n";
         }  
           
-        toComputedCode(context:BindContext):string{
-            var deps = this.getDeps(context).join(",");
-            return  `context.binders.${this.bindername}.call(context,context.element,new Y.BindDependences([${deps}],function(){ return `+ this.expression.toCode(context) + "}));\n";
+        toComputedCode(context:View):string{
+            let deps = this.getDeps(context);
+            let depstr = deps? deps.join(","):"";
+            return  `$_context.getBinder("${this.bindername}").call($_context,$_element,new Y.BindDependences([${depstr}],function(){ return `+ this.expression.toCode(context) + "}),$_context);\n";
         }  
         
-        toObjectCode(context:BindContext):string{
-            var deps = this.getDeps(context).join(",");
-            return  `context.binders.${this.bindername}.call(context,new Y.BindDependences([${deps}],function(){ return `+ this.expression.toCode(context) + "}));\n";
+        toObjectCode(context:View):string{
+            let deps = this.getDeps(context);
+            let depstr = deps? deps.join(","):"";
+            return  `$_context.getBinder("${this.bindername}").call($_context,new Y.BindDependences([${depstr}],function(){ return `+ this.expression.toCode(context) + "}),$_context);\n";
         } 
     }    
     export class ChildBeginExpression extends Expression{
@@ -2744,10 +2613,10 @@ export namespace Y {
             this.childAt = at;
             this.parentNode = parent;
         }
-        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
+        getDeps(context:View,deps?:string[]):string[]{return null;}
             
-        toCode(context:BindContext):string{
-            return `context.element = context.element.childNodes[${this.childAt}];\n`;
+        toCode(context:View):string{
+            return `$_element = $_element.childNodes[${this.childAt}];\n`;
         }
     }
     export class ChildEndExpression extends Expression{
@@ -2758,26 +2627,56 @@ export namespace Y {
             this.childAt = at;
             this.parentNode = parent;
         }
-        getDeps(context:BindContext,deps?:string[]):string[]{return null;}
+        getDeps(context:View,deps?:string[]):string[]{return null;}
             
-        toCode(context:BindContext):string{
-            return `context.element = context.element.parentNode;\n`;
+        toCode(context:View):string{
+            return `$_element = $_element.parentNode;\n`;
         }
     }
-
-    export let _binders:{[index:string]:IBinder} = {};
-    _binders["y-text"] = function(element:HTMLElement,bindable:IBindable,context:BindContext){
-        bindable.subscribe(function(sender,evt){
-            element.innerHTML = evt.value;
-        });
+    class ScopeBeginExpression extends Expression{
+        scopeExpression:ModelExpression;
+        constructor(scopeExpression:ModelExpression){
+            super();
+            this.type = ExpressionTypes.scopeBegin;
+            this.scopeExpression = scopeExpression;
+        }
+        toCode(context:View):string{
+            return "$_scopes.push($_self); $_self = "+this.scopeExpression.toCode(context)+";\n";
+        }
+        
     }
-    _binders["y-value"] = function(element:HTMLElement,bindable:IBindable,context:BindContext){
+    class ScopeEndExpression extends Expression{
+        modelPath:string;
+        constructor(){
+            super();
+            this.type = ExpressionTypes.scopeEnd;
+        }
+        toCode(context:View):string{
+            return "$_self = $_scopes.pop();\n";
+        }
+    }
+    export interface IBinder{
+        (element:HTMLElement,bindable:IBindable,context?:View):void;
+    }
+    
+    
+    
+    let binders:{[index:string]:IBinder} = View.binders;
+    binders["y-scope"] = function(){};
+    binders["y-text"] = function(element:HTMLElement,bindable:IBindable,context:View){
+        bindable.subscribe(function(sender,evt){
+            element.innerHTML = element.textContent = bindable.get_value();
+        });
+        element.innerHTML = element.textContent = bindable.get_value();
+    }
+    binders["y-value"] = function(element:HTMLElement,bindable:IBindable,context:View){
         bindable.subscribe(function(sender, evt){
-            (<HTMLInputElement>element).value = evt.value;
+            (<HTMLInputElement>element).value = bindable.get_value();
         });
         platform.attach(element,"blur",()=>{
-            bindable.setValue((<HTMLInputElement>element).value);
+            bindable.set_value((<HTMLInputElement>element).value);
         });
+        (<HTMLInputElement>element).value = bindable.get_value();
     }
     
     
@@ -2788,7 +2687,7 @@ export namespace Y {
         (element:HTMLElement,accessor:IModelAccessor,controller:IController,extra?:any):Function;
     }
 
-    export let binders :{[index:string]:IABinder}={
+    export let _binders :{[index:string]:IABinder}={
             "bibound.text":function(element:HTMLElement, accessor:IModelAccessor):Function{
                 var handler = function (sender:IModel,evt:ModelEvent) { element.innerHTML = evt.value; };
                 accessor.subscribe(handler);
@@ -2937,7 +2836,7 @@ export namespace Y {
 			return function(){accessor.unsubscribe(handler);}
 	    }
     };
-    let uniBinder :IABinder =binders["unibound"]= function(element:HTMLElement, accessor:IModelAccessor,controller:IController,extra?:any):Function{
+    let uniBinder :IABinder =_binders["unibound"]= function(element:HTMLElement, accessor:IModelAccessor,controller:IController,extra?:any):Function{
         let setValue:Function;
         if(element.tagName=="SELECT"){
             setValue = function (element:HTMLElement, value:any) {
@@ -2983,8 +2882,8 @@ export namespace Y {
             element.setAttribute("y-each-bind-id",eachId);
             var elemProto:HTMLElement = platform.cloneNode(element);
             let modelProto : Model = model.itemProto().$model;
-            let bind :IABind = makeBind(modelProto,element,controller);
-            itemViewProto = new View(controller,modelProto,elemProto);
+            //let bind :IABind = makeBind(modelProto,element,controller);
+            //itemViewProto = new View(controller,modelProto,elemProto);
             controller.module.data["y-views"][eachId] = itemViewProto;
         }
             
