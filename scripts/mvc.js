@@ -481,8 +481,8 @@ var Y;
                 }
                 var headers = opts.headers;
                 if (headers)
-                    for (var n_1 in headers)
-                        http.setRequestHeader(n_1, headers[n_1]);
+                    for (var n in headers)
+                        http.setRequestHeader(n, headers[n]);
                 var httpRequest = http;
                 httpRequest.onreadystatechange = function () {
                     if (httpRequest.readyState == 4) {
@@ -1720,55 +1720,6 @@ var Y;
         };
         return Computed;
     }());
-    /////////////////////////////////////////////////
-    // View
-    //////////////////////////////////////////////////
-    var View1 = (function () {
-        function View1(controller, model, element) {
-            if (controller === undefined)
-                return;
-            this.element = element;
-            this.model = model || (model = new Model());
-            this.controller = controller;
-            //this._bind = makeBind(this.model,this.element,this.controller);
-        }
-        View1.prototype.clone = function (controller, model, element) {
-            var other = new View1();
-            var proto = this;
-            var elem = Y.platform.cloneNode(proto.element);
-            if (element) {
-                element.innerHTML = "";
-                for (var i = 0, j = elem.childNodes.length; i < j; i++) {
-                    element.appendChild(elem.firstChild);
-                }
-                this.element = element;
-            }
-            else
-                this.element = elem;
-            if (model === null) {
-                other.model = this.model;
-            }
-            else if (model === undefined) {
-                other.model = proto.model.clone();
-            }
-            else
-                other.model = model;
-            other._bind = proto._bind;
-            if (controller) {
-                other.controller = controller;
-                other._bind(other.model, other.element, other.controller);
-            }
-            return other;
-        };
-        View1.prototype.dispose = function () {
-            this.element = undefined;
-            this.model = undefined;
-            this._bind = undefined;
-            this.controller = undefined;
-        };
-        return View1;
-    }());
-    Y.View1 = View1;
     var ABindContext = (function () {
         function ABindContext(root, element, controller) {
             this.$self = this.$root = root.$accessor;
@@ -1822,22 +1773,6 @@ var Y;
             return "_binders[\"" + this.name + "\"](_element," + this.modelPath + ",_controller);\n";
         };
         return BinderExpression;
-    }(BExpression));
-    var EachExpression = (function (_super) {
-        __extends(EachExpression, _super);
-        function EachExpression(modelPath, context) {
-            var _this = _super.call(this) || this;
-            var result = defineModel(modelPath, context);
-            _this.modelPath = result.path;
-            _this.bind = function (context) {
-                context._binders["each"](context._element, result.model.$accessor, context._controller);
-            };
-            return _this;
-        }
-        EachExpression.prototype.toString = function () {
-            return "_binders[\"each\"](_element," + this.modelPath + ",_controller);\n";
-        };
-        return EachExpression;
     }(BExpression));
     var EventExpression = (function (_super) {
         __extends(EventExpression, _super);
@@ -1949,23 +1884,38 @@ var Y;
             if (existed)
                 existed.dispose();
             var controller = this.controller = opts.controller || {};
-            this.global_binders = View.binders;
-            this.local_binders = controller._binders || {};
+            this._binders = controller._binders || (controller._binders = {});
             if (this.controller.TEXT)
                 this.label = function (key) { return controller.TEXT.call(controller, key); };
             var protoView = opts.prototypeView;
             if (!protoView) {
-                controller.model = this.model = new Model("$", { "$": opts.modelValue || {} }).$accessor;
+                if (opts.model && opts.model.$model) {
+                    this.model = opts.model.$accessor;
+                }
+                else {
+                    this.model = new Model("$", { "$": opts.model || {} }).$accessor;
+                }
                 this._binder = this.makeBinder();
             }
             else {
-                this.element.innerHTML = protoView.element.innerHTML;
-                controller.model = this.model = protoView.model.$model.clone({ "$": opts.modelValue || {} }).$accessor;
+                this.element.innerHTML = protoView.element ? protoView.element.innerHTML : protoView._html;
+                if (opts.model && opts.model.$model) {
+                    this.model = opts.model.$accessor;
+                }
+                else {
+                    this.model = new Model("$", { "$": opts.model || {} }).$accessor;
+                }
                 this._binder = protoView._binder;
             }
             if (!opts.nobind)
                 this.bind();
         }
+        View.prototype.toTemplate = function () {
+            this._html = this.element.innerHTML;
+            this.element = undefined;
+            this.model = this.model.$model.clone({}, "$").$accessor;
+            return this;
+        };
         View.prototype.bind = function (value) {
             if (value)
                 this.model(value);
@@ -1994,11 +1944,11 @@ var Y;
                 return key;
         };
         View.prototype.getBinder = function (name) {
-            return this.local_binders[name] || this.global_binders[name];
+            return this._binders[name] || View.binders[name];
         };
         View.prototype.makeBinder = function () {
             var exprs = [];
-            parseElement(this, this.element, exprs, true);
+            parseElement({ context: this, element: this.element, expressions: exprs, model: this.model, ignoreSelf: true });
             while (true) {
                 var last = exprs.pop();
                 if (!last)
@@ -2024,14 +1974,24 @@ var Y;
     View.funcs = {};
     View.binders = {};
     Y.View = View;
-    function parseElement(context, element, expressions, igoneSelf) {
-        var each;
-        var controller;
+    var ParseViewOpts = (function () {
+        function ParseViewOpts() {
+        }
+        return ParseViewOpts;
+    }());
+    Y.ParseViewOpts = ParseViewOpts;
+    function parseElement(opts) {
         var scope;
         var ui;
-        if (!igoneSelf) {
-            if (element.nodeType == 3) {
-                var embededExpr = ComputedExpression.embeded(element.nodeValue);
+        var childModel = opts.model;
+        var igoneChildren = false;
+        var element = opts.element;
+        var expressions = opts.expressions;
+        var context = opts.context;
+        var customerParsedExpression;
+        if (!opts.ignoreSelf) {
+            if (opts.element.nodeType == 3) {
+                var embededExpr = ComputedExpression.embeded(element.textContent, { model: opts.model });
                 if (embededExpr)
                     expressions.push(new BindExpression("y-text", embededExpr));
                 return;
@@ -2041,42 +2001,41 @@ var Y;
                 var attr = attrs[i];
                 var attrname = attr.name;
                 var attrvalue = attr.value;
-                var binder = context.global_binders[attrname];
-                if (!binder)
-                    binder = context.local_binders[attrname];
+                var binder = context.getBinder(attrname);
                 if (!binder)
                     continue;
-                var expr = Expression.parse(attrvalue);
+                var expr = Expression.parse(attrvalue, { model: opts.model });
                 if (!expr)
                     continue;
-                switch (attrname) {
-                    case "y-each":
-                        each = expr;
-                        continue;
-                    case "y-controller":
-                        controller = expr;
-                        continue;
-                    case "y-scope":
-                        if (expr.type == ExpressionTypes.model)
-                            scope = expr;
-                        continue;
-                    case "y-ui":
-                        ui = expr;
-                        continue;
+                if (attrname == "y-scope") {
+                    if (expr.type != ExpressionTypes.model)
+                        throw new Error("y-scope只能绑定model表达式");
+                    scope = expr;
+                    continue;
                 }
                 expr = new BindExpression(attrname, expr);
-                expressions.push(expr);
+                if (binder.parse) {
+                    if (customerParsedExpression)
+                        throw new Error("Already has a binder.parse");
+                    customerParsedExpression = binder.parse(expr, opts, binder);
+                    expressions.push(customerParsedExpression);
+                }
+                else {
+                    expressions.push(expr);
+                }
             }
         }
-        if (!element.hasChildNodes)
+        if (!element.hasChildNodes || customerParsedExpression)
             return;
-        if (scope)
+        if (scope) {
             expressions.push(new ScopeBeginExpression(scope));
+            childModel = scope.model;
+        }
         var nodes = element.childNodes;
         for (var i = 0, j = nodes.length; i < j; i++) {
             var node = nodes[i];
             expressions.push(new ChildBeginExpression(i, element));
-            parseElement(context, node, expressions);
+            parseElement({ context: context, element: node, expressions: expressions, model: childModel, ignoreSelf: false });
             var last = expressions.pop();
             if (last.childAt != i || last.parentNode != element) {
                 expressions.push(last);
@@ -2166,18 +2125,21 @@ var Y;
         function Expression() {
         }
         Expression.prototype.getDeps = function (context, deps) { throw new Error("Not implement"); };
-        Expression.prototype.toCode = function (context) { return null; };
+        Expression.prototype.toCode = function (context) { throw new Error("Invalid invoke"); };
         Expression.parse = function (text, opts) {
+            if (opts === void 0) { opts = {}; }
+            if (!opts.model)
+                opts.model = new Model();
             var expr;
-            if (expr = LabelExpression.parse(text))
+            if (expr = LabelExpression.parse(text, opts))
                 return expr;
-            if (expr = ModelExpression.parse(text))
+            if (expr = ModelExpression.parse(text, opts))
                 return expr;
-            if (expr = FunctionExpression.parse(text))
+            if (expr = FunctionExpression.parse(text, opts))
                 return expr;
             if (expr = ObjectExpression.parse(text, opts))
                 return expr;
-            if (expr = ComputedExpression.parse(text))
+            if (expr = ComputedExpression.parse(text, opts))
                 return expr;
             return ConstantExpression.parse(text, opts);
         };
@@ -2251,16 +2213,14 @@ var Y;
     Y.ConstantExpression = ConstantExpression;
     var ModelExpression = (function (_super) {
         __extends(ModelExpression, _super);
-        function ModelExpression(names) {
+        function ModelExpression(names, currentModel) {
             var _this = _super.call(this) || this;
             _this.type = ExpressionTypes.model;
             _this.names = names;
+            _this.model = _this._parsePath(currentModel.$model);
             return _this;
         }
-        ModelExpression.prototype.getPath = function (context) {
-            if (this._path)
-                return this._path;
-            var curr = context.model.$model;
+        ModelExpression.prototype._parsePath = function (curr) {
             var names = this.names.split(".");
             var rs = ["$_self"];
             for (var i = 0, j = names.length; i < j; i++) {
@@ -2272,7 +2232,8 @@ var Y;
                     rs = ["$_self.$model.root().$accessor"];
                 }
                 else if (name_3 == "$parent") {
-                    curr = curr.container();
+                    var p = curr.container();
+                    curr = p || curr;
                     rs.push("$_self.container().$accessor");
                 }
                 else if (name_3 == "$self") {
@@ -2285,15 +2246,16 @@ var Y;
                     rs.push(name_3);
                 }
             }
-            return this._path = rs.join(".");
+            this.path = rs.join(".");
+            return curr;
         };
         ModelExpression.prototype.getDeps = function (context, deps) {
             deps || (deps = []);
-            deps.push(this.getPath(context));
+            deps.push(this.path);
             return deps;
         };
         ModelExpression.prototype.toCode = function (context) {
-            return this.getPath(context);
+            return this.path;
         };
         ModelExpression.parse = function (text, opts) {
             if (!text)
@@ -2301,7 +2263,7 @@ var Y;
             var matches = text.match(ModelExpression.patten);
             if (matches) {
                 var path = matches[0];
-                var result = new ModelExpression(path);
+                var result = new ModelExpression(path, opts.model);
                 result.matchLength = path.length;
                 return result;
             }
@@ -2368,7 +2330,7 @@ var Y;
                 return new FunctionExpression(fnname, args, len);
             }
             while (true) {
-                var arg = Expression.parse(text, { constantEndPatten: /[,\)]/i, objectBrackets: true });
+                var arg = Expression.parse(text, { model: opts.model, constantEndPatten: /[,\)]/i, objectBrackets: true });
                 if (arg) {
                     args.push(arg);
                     text = text.substr(arg.matchLength);
@@ -2492,7 +2454,7 @@ var Y;
                     (obj || (obj = {}))[key] = new ConstantExpression("", 0);
                     return new ObjectExpression(obj, len);
                 }
-                var valueExpr = Expression.parse(text, { constantEndPatten: constEndPatten, objectBrackets: true });
+                var valueExpr = Expression.parse(text, { model: opts.model, constantEndPatten: constEndPatten, objectBrackets: true });
                 if (!valueExpr)
                     break;
                 (obj || (obj = {}))[key] = valueExpr;
@@ -2553,7 +2515,7 @@ var Y;
             return null;
         };
         ComputedExpression.parse = function (text, opts) {
-            var paramExpr = ObjectExpression.parse(text, { objectBrackets: ["\\(", "\\)"] });
+            var paramExpr = ObjectExpression.parse(text, { model: opts.model, objectBrackets: ["\\(", "\\)"] });
             if (!paramExpr)
                 return null;
             var len = paramExpr.matchLength;
@@ -2571,7 +2533,7 @@ var Y;
             return new ComputedExpression(paramExpr.members, code, len);
             //ObjectExpression.parse();
         };
-        ComputedExpression.embeded = function (text) {
+        ComputedExpression.embeded = function (text, opts) {
             var pars = {};
             var code = "";
             var at = 0;
@@ -2587,7 +2549,7 @@ var Y;
                 var exptext = text.substring(startAt + 2, endAt).replace(Y.trimRegex, "");
                 if (!exptext)
                     continue;
-                var exp = Expression.parse(exptext);
+                var exp = Expression.parse(exptext, opts);
                 if (!exp || exp.type === ExpressionTypes.constant)
                     continue;
                 var ctext_1 = toJsonString(text.substring(lastAt, startAt));
@@ -2731,6 +2693,87 @@ var Y;
         });
         element.value = bindable.get_value();
     };
+    var eachBinder = binders["y-each"] = function (element, bindable, context) {
+        var viewTemplate = context._innerViews[element.getAttribute("y-each-view-id")];
+        var model = bindable.$model;
+        var addItemToView = function (item, anchorElement) {
+            var domContainer = document.createElement("div");
+            var itemView = new View({
+                prototypeView: viewTemplate,
+                element: domContainer,
+                model: item
+            });
+            var elem = itemView.element;
+            if (anchorElement == null) {
+                for (var i = 0, j = elem.childNodes.length; i < j; i++) {
+                    element.appendChild(elem.childNodes[i]);
+                }
+            }
+            else {
+                for (var i = 0, j = elem.childNodes.length; i < j; i++) {
+                    element.insertBefore(elem.firstChild, anchorElement);
+                }
+            }
+        };
+        var handler = function (sender, evt) {
+            if (evt.action == ModelActions.change) {
+                element.innerHTML = "";
+                for (var i = 0, j = evt.value.length; i < j; i++) {
+                    var item = model.getItem(i, true);
+                    addItemToView(item, null);
+                }
+                return;
+            }
+            if (evt.action == ModelActions.clear) {
+                element.innerHTML = "";
+                return;
+            }
+            if (evt.action != ModelActions.child) {
+                return;
+            }
+            var ievt = evt.directSource;
+            var elemProto = viewTemplate.element;
+            switch (ievt.action) {
+                case ModelActions.add:
+                    var anchorElement = null;
+                    if (evt.index * elemProto.childNodes.length <= element.childNodes.length - 1)
+                        anchorElement = element.childNodes[evt.index];
+                    addItemToView(model.getItem(evt.index, true), anchorElement);
+                    break;
+                case ModelActions.remove:
+                    var at = evt.index * elemProto.childNodes.length;
+                    for (var i = 0, j = elemProto.childNodes.length; i < j; i++) {
+                        var ch = element.childNodes[at];
+                        if (ch == null)
+                            break;
+                        element.removeChild(ch);
+                    }
+                    break;
+                case ModelActions.clear:
+                    element.innerHTML = "";
+                    break;
+            }
+        };
+        model.subscribe(handler);
+        element.innerHTML = "";
+    }; //end eachBinder 
+    eachBinder.parse = function (valueExpr, opts, binder) {
+        if (valueExpr.type != ExpressionTypes.model)
+            throw new Error("each 只能绑定Model表达式");
+        var model = valueExpr.model.$model;
+        var eachView = new View({
+            element: opts.element,
+            controller: opts.context.controller,
+            nobind: true
+        });
+        //eachView.toTemplate();
+        var id = "y-view-each-" + seed();
+        opts.element.setAttribute("y-each-view-id", id);
+        var innerViews = opts.context._innerViews || (opts.context._innerViews = {});
+        innerViews[id] = eachView;
+        model.toArray(eachView.model.$model);
+        return new BindExpression("y-each", valueExpr);
+    };
     Y._binders = {
         "bibound.text": function (element, accessor) {
             var handler = function (sender, evt) { element.innerHTML = evt.value; };
@@ -2832,8 +2875,8 @@ var Y;
                 }
                 else {
                     var childNodes_1 = element.parentNode.parentElement.childNodes;
-                    for (var i_1 = 0, j_1 = childNodes_1.length; i_1 < j_1; i_1++) {
-                        var child = childNodes_1[i_1];
+                    for (var i = 0, j = childNodes_1.length; i < j; i++) {
+                        var child = childNodes_1[i];
                         for (var n = 0, m = child.childNodes.length; n < m; n++) {
                             var ck = child.childNodes[n];
                             if (ck.tagName !== 'INPUT' || ck.type !== 'checkbox')
@@ -2861,14 +2904,14 @@ var Y;
                             hasValue = true;
                             break;
                         }
-                    }
-                    if (value[i] === element.value) {
-                        element.checked = true;
-                        element.setAttribute("checked", "checked");
-                    }
-                    else {
-                        element.checked = false;
-                        element.removeAttribute("checked");
+                        if (value[i] === element.value) {
+                            element.checked = true;
+                            element.setAttribute("checked", "checked");
+                        }
+                        else {
+                            element.checked = false;
+                            element.removeAttribute("checked");
+                        }
                     }
                 }
                 else {
@@ -2921,91 +2964,6 @@ var Y;
         setValue(element, undefined);
         return function () { accessor.unsubscribe(handler); };
     };
-    var EachItemBindInfo = (function () {
-        function EachItemBindInfo(view, bind) {
-            this.view = view;
-            this.bind = bind;
-        }
-        return EachItemBindInfo;
-    }());
-    var eachBinder = binders["each"] = function (element, accessor, extra) {
-        var controller = extra;
-        var model = accessor.$model;
-        var eachId = element.getAttribute("y-each-view-id");
-        var itemViewProto;
-        if (eachId) {
-            itemViewProto = controller.module.data["y-views"][eachId];
-        }
-        else {
-            eachId = seed().toString();
-            element.setAttribute("y-each-bind-id", eachId);
-            var elemProto = Y.platform.cloneNode(element);
-            var modelProto = model.itemProto().$model;
-            //let bind :IABind = makeBind(modelProto,element,controller);
-            //itemViewProto = new View(controller,modelProto,elemProto);
-            controller.module.data["y-views"][eachId] = itemViewProto;
-        }
-        var addItemToView = function (item, anchorElement) {
-            var itemView = itemViewProto.clone(controller, item);
-            var elem = itemView.element;
-            if (anchorElement == null) {
-                for (var i = 0, j = elem.childNodes.length; i < j; i++) {
-                    element.appendChild(elem.childNodes[i]);
-                }
-            }
-            else {
-                for (var i = 0, j = elem.childNodes.length; i < j; i++) {
-                    element.insertBefore(elem.firstChild, anchorElement);
-                }
-            }
-        };
-        var handler = function (sender, evt) {
-            if (evt.action == ModelActions.change) {
-                element.innerHTML = "";
-                for (var i = 0, j = evt.value.length; i < j; i++) {
-                    var item = model.getItem(i, true);
-                    addItemToView(item, null);
-                }
-                return;
-            }
-            if (evt.action == ModelActions.clear) {
-                element.innerHTML = "";
-                return;
-            }
-            if (evt.action != ModelActions.child) {
-                return;
-            }
-            var ievt = evt.directSource;
-            var elemProto = itemViewProto.element;
-            switch (ievt.action) {
-                case ModelActions.add:
-                    var anchorElement = null;
-                    if (evt.index * elemProto.childNodes.length <= element.childNodes.length - 1)
-                        anchorElement = element.childNodes[evt.index];
-                    addItemToView(model.getItem(evt.index, true), anchorElement);
-                    break;
-                case ModelActions.remove:
-                    var at = evt.index * elemProto.childNodes.length;
-                    for (var i = 0, j = elemProto.childNodes.length; i < j; i++) {
-                        var ch = element.childNodes[at];
-                        if (ch == null)
-                            break;
-                        element.removeChild(ch);
-                    }
-                    break;
-                case ModelActions.clear:
-                    element.innerHTML = "";
-                    break;
-            }
-        };
-        model.subscribe(handler);
-        element.innerHTML = "";
-        return function () {
-            //TODO : 应该要重新构建，而不是清空
-            model["@model.props"] = {};
-            model.unsubscribe(handler);
-        };
-    }; //end eachBind
     var _seed = 0;
     function seed() {
         return (_seed == 2100000000) ? _seed = 0 : _seed++;

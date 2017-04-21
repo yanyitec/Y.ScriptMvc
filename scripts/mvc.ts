@@ -87,7 +87,7 @@ export namespace Y {
                 subscribers = this.__y_observable_subscriberset?this.__y_observable_subscriberset[event as string]:null;
             }
             if(!subscribers) return this;
-            var isArr = isArray(args);
+            let isArr = isArray(args);
             for(let i =0,j=subscribers.length;i<j;i++){
                 if(subscribers[i].call(this,args) ===BREAK) break;
             }
@@ -102,7 +102,7 @@ export namespace Y {
                 subscribers = this.__y_observable_subscriberset?this.__y_observable_subscriberset[event as string]:null;
             }
             if(!subscribers) return this;
-            var isArr = isArray(args);
+            let isArr = isArray(args);
             for(let i =0,j=subscribers.length;i<j;i++){
                 if(subscribers[i].apply(this,args) === BREAK) break;
             }
@@ -165,7 +165,7 @@ export namespace Y {
             let resolve = function(value?:any,value1?:any):void{
                 
                 if(value===me) {
-                    var ex = new TypeError("cannot use self promise as fullfilled value.");
+                    let ex = new TypeError("cannot use self promise as fullfilled value.");
                     logger.warn(ex,"y/Promise.resolve");
                 }
                 let vt = typeof value;
@@ -404,7 +404,7 @@ export namespace Y {
         }
         
         cloneNode(elem:HTMLElement):HTMLElement{
-            var tag = elem.tagName;
+            let tag = elem.tagName;
             if (elem.cloneNode) return elem.cloneNode(true) as HTMLElement;
             if(!tagContainers){
                tagContainers = {
@@ -470,7 +470,7 @@ export namespace Y {
                 let data = opts.data;
                 if(typeof data==='object'){
                     let content = "";
-                    for(var n in data){
+                    for(let n in data){
                         content += encodeURIComponent(n) + "=" + encodeURIComponent(data[n]) + "&";
                     }
                     data = content;
@@ -485,7 +485,7 @@ export namespace Y {
                 }
                 let headers = opts.headers;
                 if(headers) for(let n in headers) http.setRequestHeader(n,headers[n]);  
-                var httpRequest:XMLHttpRequest = http as XMLHttpRequest; 
+                let httpRequest:XMLHttpRequest = http as XMLHttpRequest; 
                 httpRequest.onreadystatechange = ()=>{
                     if(httpRequest.readyState==4){
                         let result;
@@ -604,7 +604,7 @@ export namespace Y {
             let paths = (basPath +"/" +relativePath).split("/");
             let rs =[];
             for(let i =0,j=paths.length;i<j;i++){
-                var ps = paths[i];
+                let ps = paths[i];
                 if(!ps) continue;
                 if(ps===".") continue;
                 if(ps==="..") {rs.pop();continue;}
@@ -648,7 +648,7 @@ export namespace Y {
         static parseQueryString(querystr:string,extra?:any):{[index:string]:string}{
             let result:{[index:string]:string}={};
             if(!querystr)return result;
-            var sets = querystr.split('&');
+            let sets = querystr.split('&');
             for(let i =0,j=sets.length;i<j;i++){
                 let set:string = sets[i];
                 let [key,value] = set.split('=');
@@ -866,8 +866,8 @@ export namespace Y {
             if(this.value && this.value.dispose){
                 this.value.dispose();
             }
-            for(var n in this._disposing){
-                var fn = this._disposing[n];
+            for(let n in this._disposing){
+                let fn = this._disposing[n];
                 fn.call(this);
             }
         }
@@ -1031,7 +1031,7 @@ export namespace Y {
         private static documentHead:HTMLHeadElement;
         private static getDocumentHead():HTMLElement{
             if(Module.documentHead)return Module.documentHead;
-            var heads = document.getElementsByTagName("head");
+            let heads = document.getElementsByTagName("head");
             if(heads!=null && heads.length) return Module.documentHead = heads[0];
             return document.body|| document.documentElement;
         }
@@ -1085,9 +1085,9 @@ export namespace Y {
         
         public createController(controllerArea:string|HTMLElement):any{
             let area:HTMLElement= platform.getElement(controllerArea);
-            var controllerType = this.data["y-controller-type"];
+            let controllerType = this.data["y-controller-type"];
             if(!controllerType){
-                var proto = this.value;
+                let proto = this.value;
                 if(typeof proto==="function") controllerType = proto;
                 else{
                     controllerType = function(){};
@@ -1276,11 +1276,11 @@ export namespace Y {
         
         public subject(newSubject?: any, source?:ModelEvent): any {
             if (newSubject === undefined) { return this._subject; }
-            var oldSubject: Object = this._subject;
+            let oldSubject: Object = this._subject;
             if (oldSubject === newSubject) { return oldSubject; }
-            var oldValue = oldSubject[this._name];
+            let oldValue = oldSubject[this._name];
             newSubject= this._subject = newSubject || {};
-            var newValue = newSubject[this._name];
+            let newValue = newSubject[this._name];
             if(oldValue===newValue){
                 return this._subject;
             }
@@ -1310,7 +1310,7 @@ export namespace Y {
         private _notifyValuechange(evt: ModelEvent,ignoreSuperior?:boolean):void {
             let changeHandlers: IModelEventHandler[] = this._changeHandlers;
             if (changeHandlers) {
-                for (var i: number = 0, j: number = changeHandlers.length; i < j; i++) {
+                for (let i: number = 0, j: number = changeHandlers.length; i < j; i++) {
                     let handler: IModelEventHandler = changeHandlers.shift();
                     handler.call(this, this.$accessor, evt);
                     changeHandlers.push(handler);
@@ -1318,10 +1318,10 @@ export namespace Y {
             }
            
             
-            var value = this._subject[this._name];
+            let value = this._subject[this._name];
             
             //向上传播事件
-            var superior: Model = this._superior;
+            let superior: Model = this._superior;
             if (superior && ignoreSuperior!==true) {
                 evt = new ModelEvent(this, ModelActions.child, this._subject, undefined, evt);
                 superior._notifyValuechange(evt);
@@ -1354,7 +1354,7 @@ export namespace Y {
                 
                 for (let name in members) {
                     if (!members.hasOwnProperty(name)) { continue; }
-                    var member: Model = members[name];
+                    let member: Model = members[name];
                     member.subject(newValue,evt);
                 }
             }
@@ -1378,7 +1378,7 @@ export namespace Y {
             let member: Model = members?members[name]:null;
             if(member){
                 if(defination instanceof Object){
-                    var def :{} = member._defination||( member._defination={});
+                    let def :{} = member._defination||( member._defination={});
                     for(let n in defination){
                         def[n] = defination[n];
                     }
@@ -1395,7 +1395,7 @@ export namespace Y {
             newMember._superior = this;
             name || (name = newMember._name);
             members[name] = newMember;
-            var aname: string = Model.chromeKeywords[name] || name.toString();
+            let aname: string = Model.chromeKeywords[name] || name.toString();
             this.$accessor[aname] = newMember.$accessor;
             if(this.$modelType === ModelTypes.any) {
                 this.$accessor.$modelType = this.$modelType = ModelTypes.object;
@@ -1424,7 +1424,7 @@ export namespace Y {
             model._defination = defination;
         }
         public clone(newSubject: Object = {},newName?:string|number): Model {
-            var newModel: Model = new Model(newName = newName===undefined?this._name:newName, newSubject);
+            let newModel: Model = new Model(newName = newName===undefined?this._name:newName, newSubject);
             newModel._defination = this._defination;
             newModel.$modelType = this.$modelType;
             if(newModel._itemProto = this._itemProto){
@@ -1460,7 +1460,7 @@ export namespace Y {
                 let depModel: IModel = deps[n];
                 if (!depModel.subscribe) { throw n + " is not a model or accessor."; }
                 depModel.subscribe((sender: IModelAccessor, evt: ModelEvent): void => {
-                    var value:any = this._computed.getValue();
+                    let value:any = this._computed.getValue();
                     let computedEvt: ModelEvent = new ModelEvent(this, ModelActions.computed, value, undefined, evt);
                     this._notifyValuechange(computedEvt,true);
                 });
@@ -1596,7 +1596,7 @@ export namespace Y {
             }
             delete members[value.length];
 
-            var evt: ModelEvent = new ModelEvent(this, ModelActions.remove, value, value);
+            let evt: ModelEvent = new ModelEvent(this, ModelActions.remove, value, value);
             evt.index = 0;
             
             this._notifyValuechange(evt);
@@ -1609,8 +1609,8 @@ export namespace Y {
             if (!value) { return undefined; }
             if (value.length === 0 || value.length === undefined) { return undefined; }
             if (returnModel === true) {
-                var members: { [index: string]: Model } = this._members || (this._members={});
-                var itemModel: Model = members[index];
+                let members: { [index: string]: Model } = this._members || (this._members={});
+                let itemModel: Model = members[index];
                 if (itemModel !== undefined) { return itemModel; }
                 itemModel = this._itemProto.clone(value,index);
                 members[index] = itemModel;
@@ -1707,51 +1707,7 @@ export namespace Y {
     /////////////////////////////////////////////////
     // View
     //////////////////////////////////////////////////
-    export class View1 implements IView{
-        element:HTMLElement;
-        _html:string;
-        model:Model;
-        controller:IController;
-        _bind:IABind;
-        constructor(controller?:IController,model?:Model,element?:HTMLElement){
-            if(controller===undefined) return;
-            this.element = element;
-            this.model = model ||(model= new Model());
-            this.controller = controller;
-            //this._bind = makeBind(this.model,this.element,this.controller);
-        }
-        clone(controller?:IController,model?:Model,element?:HTMLElement):IView{
-            let other:View1 =  new View1();
-            let proto:View1 = this;
-            let elem:HTMLElement = platform.cloneNode(proto.element);
-            if(element){
-                element.innerHTML = "";
-                for(let i =0,j=elem.childNodes.length;i<j;i++){
-                    element.appendChild(elem.firstChild);
-                }
-                this.element = element;
-            }else this.element = elem;
-            if(model===null){
-                other.model = this.model;
-            }else if(model === undefined){
-                other.model = proto.model.clone();
-            }else other.model = model;
-            other._bind = proto._bind;
-            if(controller){
-                other.controller = controller;
-                other._bind(other.model,other.element,other.controller);
-            }
-            
-            return other;
-        }
-        dispose():void{
-            this.element = undefined;
-            this.model = undefined;
-            this._bind = undefined;
-            this.controller = undefined;
-        }
-        
-    }
+    
     export interface IABind{
         (modelOrContext:Model|ABindContext,element?:HTMLElement,controller?:IController,extra?:any):void;
     }
@@ -1824,21 +1780,7 @@ export namespace Y {
         }
     }
 
-    class EachExpression extends BExpression{
-        modelPath:string;
-        constructor(modelPath:string,context:ABindContext){
-            super();
-            let result:DefineResult = defineModel(modelPath,context);
-            this.modelPath = result.path;
-            this.bind = function(context:ABindContext){
-                context._binders["each"](context._element,result.model.$accessor,context._controller);
-            }
-        }
-        
-        toString():string{
-            return "_binders[\"each\"](_element,"+this.modelPath+",_controller);\n";
-        }
-    }
+    
 
     
     class EventExpression extends BExpression{
@@ -1860,7 +1802,7 @@ export namespace Y {
         }
     }
 
-    var trimReg = /(^\s+)|(\s+$)/;
+    let trimReg = /(^\s+)|(\s+$)/;
     let varExprText:string = "[a-zA-Z_\\$][a-zA-Z0-9_\\$]*";
     let jsonPathExprText:string = varExprText + "(?:."+varExprText+")*";
     //双向绑定value {{User.Name}}
@@ -1884,9 +1826,9 @@ export namespace Y {
         }
     }
     function definePath(modelPath:string,context:ABindContext):DefineResult{
-        var paths = modelPath.split(".");
-        var first = paths.shift();
-        var accessor = context.$self;
+        let paths = modelPath.split(".");
+        let first = paths.shift();
+        let accessor = context.$self;
         if(first=="$root" || first == "$"){
             accessor = context.$root;
         }else if(first=="$parent"){
@@ -1897,7 +1839,7 @@ export namespace Y {
         }
         let model :Model = accessor.$model;
         for(let i:number=0,j:number=paths.length;i<j;i++){
-            var pathname = paths[i].replace(trimReg,"");
+            let pathname = paths[i].replace(trimReg,"");
             if (pathname=="") throw "Invalid expression:" + modelPath;
             model = model.prop(pathname,{});
         }
@@ -1917,7 +1859,7 @@ export namespace Y {
         if(element.tagName=="TEXTAREA") bindname = "textbox";
         else if(element.tagName=="SELECT") bindname = "select";
         else if(element.tagName=="INPUT"){
-            var t = (element as HTMLInputElement).type;
+            let t = (element as HTMLInputElement).type;
             if(t==="checkbox") bindname = "checkbox";
             else if(t==="radio") bindname = "radio";
             else bindname="textbox";
@@ -1929,7 +1871,7 @@ export namespace Y {
         if(codes===null || codes===undefined) codes = [];
         let exprs:Array<BExpression> = [];
     }
-    var valuebinder = function(element,expr,context){
+    let valuebinder = function(element,expr,context){
         let deps = expr.getDeps(context);
         deps.subscribe((evt)=>{
             element.value = expr.getValue(context);
@@ -1941,17 +1883,18 @@ export namespace Y {
     export class ViewOpts{
         element:HTMLElement;
         controller?:{};
-        modelValue?:{};
+        model?:any;
         prototypeView?:View;
-        nobind:boolean;
+        nobind?:boolean;
     }
     export class View{
         controller:any;
         model :IModelAccessor; 
-        global_binders:{[index:string]:IBinder};
-        local_binders:{[index:string]:IBinder};
         element:HTMLElement;
+        _html?:string;
         protected _binder:IBinder;
+        _binders :{[index:string]:IBinder};
+        _innerViews?:{[index:string]:View};
         
 
         constructor(opts:ViewOpts){
@@ -1959,26 +1902,38 @@ export namespace Y {
             let existed = this.element["y-bind-view"] as View;
             if(existed) existed.dispose();
             let controller:any = this.controller = opts.controller||{};
-            this.global_binders = View.binders;
-            this.local_binders = controller._binders||{};
-            
-            
+            this._binders = controller._binders|| (controller._binders={});
             if(this.controller.TEXT) this.label = (key:string):string =>controller.TEXT.call(controller,key);
             let protoView= opts.prototypeView;
             if(!protoView){
-                controller.model = this.model = new Model("$",{"$":opts.modelValue||{}}).$accessor;
+                if(opts.model && (opts.model as IModel).$model){
+                    this.model = (opts.model as IModel).$accessor;
+                }else{
+                    this.model = new Model("$",{"$":opts.model||{}}).$accessor;
+                }
+                
                 this._binder = this.makeBinder();
             }else{
-                this.element.innerHTML = protoView.element.innerHTML;
-                controller.model = this.model = protoView.model.$model.clone({"$":opts.modelValue||{}}).$accessor;
+                this.element.innerHTML = protoView.element  ? protoView.element.innerHTML: protoView._html;
+                if(opts.model && (opts.model as IModel).$model){
+                    this.model = (opts.model as IModel).$accessor;
+                }else{
+                    this.model = new Model("$",{"$":opts.model||{}}).$accessor;
+                }
                 this._binder = protoView._binder;
             }
             if(!opts.nobind) this.bind();
         }
+        toTemplate():View{
+            this._html = this.element.innerHTML;
+            this.element = undefined;
+            this.model = this.model.$model.clone({},"$").$accessor;
+            return this;
+        }
         bind(value?:any):View{
             if(value) this.model(value);
             if(this.element["y-bind-view"]) return this;
-            this._binder(this.element,this.model,this);
+            this._binder(this.element as HTMLElement,this.model,this);
             return this.element["y-bind-view"] = this;
         }
         
@@ -1996,11 +1951,11 @@ export namespace Y {
             if(text===undefined) return key;
         }
         getBinder(name:string){
-            return this.local_binders[name]|| this.global_binders[name];
+            return this._binders[name]|| View.binders[name];
         }
         makeBinder():IBinder{
             let exprs:Expression[] = [];
-            parseElement(this,this.element,exprs,true);
+            parseElement({context:this,element:this.element as HTMLElement ,expressions: exprs,model:this.model,ignoreSelf:true});
             while(true){
                 let last = exprs.pop();
                 if(!last) break;
@@ -2024,47 +1979,67 @@ export namespace Y {
         static readonly binders :{[index:string]:IBinder}={};
         
     }  
-    function parseElement(context:View,element:HTMLElement,expressions:Expression[],igoneSelf?:boolean){
-        let each:Expression;
-        let controller:Expression;
+    export class ParseViewOpts{
+        context:View;
+        element:HTMLElement;
+        expressions:Expression[];
+        model:IModel;
+        ignoreSelf?:boolean;
+    }
+    function parseElement(opts:ParseViewOpts){
         let scope:ModelExpression;
         let ui :Expression;
-        if(!igoneSelf){
-            if(element.nodeType==3){
-                let embededExpr = ComputedExpression.embeded(element.nodeValue);
+        let childModel:IModel = opts.model;
+        let igoneChildren = false;
+        let element = opts.element;
+        let expressions = opts.expressions;
+        let context = opts.context;
+        let customerParsedExpression:Expression;
+        if(!opts.ignoreSelf){
+            if(opts.element.nodeType==3){
+                let embededExpr = ComputedExpression.embeded(element.textContent,{model:opts.model});
                 if(embededExpr)   expressions.push(new BindExpression("y-text",embededExpr));
                 return;
             }
             
             let attrs = element.attributes;
+            
             for(let i =0,j=attrs.length;i<j;i++){
                 let attr = attrs[i];
                 let attrname = attr.name;
                 let attrvalue = attr.value;
-                let binder = context.global_binders[attrname];
-                if(!binder) binder = context.local_binders[attrname];
+                let binder = context.getBinder(attrname);
                 if(!binder) continue;
-                let expr = Expression.parse(attrvalue);
+                let expr = Expression.parse(attrvalue,{model:opts.model});
                 if(!expr) continue;
-                switch(attrname){
-                    case "y-each":each = expr;continue;
-                    case "y-controller":controller = expr;continue;
-                    case "y-scope":if(expr.type == ExpressionTypes.model)scope = expr as ModelExpression;continue;
-                    case "y-ui":ui = expr;continue;
+                if(attrname=="y-scope"){
+                    if(expr.type!= ExpressionTypes.model) throw new Error("y-scope只能绑定model表达式");
+                    scope = expr as ModelExpression;
+                    continue;
                 }
                 expr = new BindExpression(attrname,expr);
-                expressions.push(expr);
+                
+                if(binder.parse) {
+                    if(customerParsedExpression) throw new Error("Already has a binder.parse");
+                    customerParsedExpression = binder.parse(expr,opts,binder);
+                    expressions.push(customerParsedExpression);
+                }else{
+                    expressions.push(expr);
+                }
             }
         }
         
-        if(!element.hasChildNodes) return; 
-
-        if(scope) expressions.push(new ScopeBeginExpression(scope));
+        if(!element.hasChildNodes || customerParsedExpression) return; 
+        
+        if(scope) {
+            expressions.push(new ScopeBeginExpression(scope));
+            childModel = scope.model;
+        }
         let nodes = element.childNodes;
         for(let i =0,j=nodes.length;i<j;i++){
             let node = nodes[i];
             expressions.push(new ChildBeginExpression(i,element as HTMLElement));
-            parseElement(context,node as HTMLElement , expressions);
+            parseElement({context:context,element:node as HTMLElement ,expressions: expressions,model:childModel,ignoreSelf:false});
             let last = expressions.pop() as ChildBeginExpression;
             if(last.childAt!=i || last.parentNode!=element){
                 expressions.push(last);
@@ -2150,6 +2125,7 @@ export namespace Y {
 
     }
     export interface ParseExpressionOpts{
+        model?:IModel;
         //对象表达式是否必须要有{}
         objectBrackets?:boolean|string[];
         //固定值的结束标记
@@ -2160,14 +2136,15 @@ export namespace Y {
         matchLength:number; 
         getDeps(context:View,deps?:string[]):string[]{throw new Error("Not implement");}
         
-        toCode(context:View):string{return null;}
-        static parse(text:string,opts?:ParseExpressionOpts):Expression{
+        toCode(context:View):string{throw new Error("Invalid invoke");}
+        static parse(text:string,opts:ParseExpressionOpts={}):Expression{
+            if(!opts.model) opts.model = new Model();
             let expr :Expression;
-            if(expr = LabelExpression.parse(text)) return expr;
-            if(expr = ModelExpression.parse(text)) return expr;
-            if(expr = FunctionExpression.parse(text)) return expr;
+            if(expr = LabelExpression.parse(text,opts)) return expr;
+            if(expr = ModelExpression.parse(text,opts)) return expr;
+            if(expr = FunctionExpression.parse(text,opts)) return expr;
             if(expr = ObjectExpression.parse(text,opts)) return expr;
-            if(expr = ComputedExpression.parse(text)) return expr;
+            if(expr = ComputedExpression.parse(text,opts)) return expr;
             return ConstantExpression.parse(text,opts);
             
         }    
@@ -2228,15 +2205,16 @@ export namespace Y {
     }
     export class ModelExpression extends Expression{
         names:string;
-        constructor(names:string){
+        path:string;
+        model:IModel;
+        constructor(names:string,currentModel:IModel){
             super();
             this.type = ExpressionTypes.model;
             this.names =names;
+            this.model = this._parsePath(currentModel.$model);
         }
-        _path:string;
-        getPath(context:View):string{
-            if(this._path) return this._path;
-            let curr = context.model.$model;
+        
+        _parsePath(curr:Model):Model{
             let names = this.names.split(".");
             let rs :string[]=["$_self"];
             for(let i=0,j=names.length;i<j;i++){
@@ -2246,7 +2224,8 @@ export namespace Y {
                     curr = curr.root();
                     rs = ["$_self.$model.root().$accessor"];
                 }else if(name=="$parent"){
-                    curr= curr.container();
+                    let p :Model = curr.container();
+                    curr=p ||curr;
                     rs.push("$_self.container().$accessor")
                 }else if(name == "$self"){
                     curr = curr;
@@ -2256,17 +2235,17 @@ export namespace Y {
                     rs.push(name);
                 } 
             }
-            return this._path =  rs.join(".");
-            
+            this.path =  rs.join(".");
+            return curr;
         }
         getDeps(context:View,deps?:string[]):string[]{
             deps||(deps=[]);
-            deps.push(this.getPath(context));
+            deps.push(this.path);
             return deps;
         }
 
         toCode(context:View):string{
-            return  this.getPath(context);
+            return  this.path;
         } 
         static patten:RegExp = /^\s*\$(?:[a-zA-Z][a-zA-Z0-9_\$]*)?(?:\s*\.[a-zA-Z_\$][a-zA-Z0-9_\$]*)*\s*/i;
         static parse(text:string,opts?:ParseExpressionOpts):ModelExpression{
@@ -2274,7 +2253,7 @@ export namespace Y {
             let matches = text.match(ModelExpression.patten);
             if(matches){
                 let path = matches[0];
-                let result:ModelExpression = new ModelExpression(path);
+                let result:ModelExpression = new ModelExpression(path,opts.model);
                 result.matchLength = path.length;
                 return result;
             } 
@@ -2336,7 +2315,7 @@ export namespace Y {
                 return new FunctionExpression(fnname,args,len);
             }
             while(true){
-                let arg = Expression.parse(text,{constantEndPatten:/[,\)]/i,objectBrackets:true});
+                let arg = Expression.parse(text,{model:opts.model,constantEndPatten:/[,\)]/i,objectBrackets:true});
                 if(arg){
                     args.push(arg);
                     text =text.substr(arg.matchLength);
@@ -2363,8 +2342,7 @@ export namespace Y {
             }
             return code += ")";
         } 
-    }
-    
+    }  
     export class ObjectExpression extends Expression{
         members:{[index:string]:Expression}
         constructor(members:{[index:string]:Expression},matchLength:number){
@@ -2453,7 +2431,7 @@ export namespace Y {
                     return new ObjectExpression(obj,len);
                 }
                 
-                let valueExpr = Expression.parse(text,{constantEndPatten:constEndPatten,objectBrackets:true});
+                let valueExpr = Expression.parse(text,{model:opts.model,constantEndPatten:constEndPatten,objectBrackets:true});
                 if(!valueExpr)break;
                 (obj||(obj={}))[key] = valueExpr;
                 text = text.substr(valueExpr.matchLength);
@@ -2504,7 +2482,7 @@ export namespace Y {
         }
         static patten:RegExp = /^\s*=>\s*/;
         static parse(text:string,opts?:ParseExpressionOpts):ComputedExpression{
-            let paramExpr = ObjectExpression.parse(text,{objectBrackets:["\\(","\\)"]});
+            let paramExpr = ObjectExpression.parse(text,{model:opts.model,objectBrackets:["\\(","\\)"]});
             if(!paramExpr)return null;
             let len = paramExpr.matchLength;
             text = text.substr(len);
@@ -2520,7 +2498,7 @@ export namespace Y {
             //ObjectExpression.parse();
         }
         static labelPatten:RegExp = /##([^#\n\r\t]+)##/;
-        static embeded(text:string):ComputedExpression{
+        static embeded(text:string,opts?:ParseExpressionOpts):ComputedExpression{
             let pars :{[index:string]:Expression} = {};
             let code = "";
             let at =0;
@@ -2533,7 +2511,7 @@ export namespace Y {
                 if(endAt<0) break;
                 let exptext = text.substring(startAt + 2,endAt).replace(trimRegex,"");
                 if(!exptext) continue;
-                let exp = Expression.parse(exptext);
+                let exp = Expression.parse(exptext,opts);
                 
                 if(!exp || exp.type === ExpressionTypes.constant)continue;
                 let ctext = toJsonString(text.substring(lastAt,startAt));
@@ -2655,8 +2633,10 @@ export namespace Y {
             return "$_self = $_scopes.pop();\n";
         }
     }
+    
     export interface IBinder{
-        (element:HTMLElement,bindable:IBindable,context?:View):void;
+        (element:HTMLElement,bindable:IBindable,context:View):void;
+        parse?:(valueExpr:Expression,opts:ParseViewOpts,binder:IBinder)=>Expression;
     }
     
     
@@ -2678,217 +2658,16 @@ export namespace Y {
         });
         (<HTMLInputElement>element).value = bindable.get_value();
     }
-    
-    
-    
-
-    
-    export interface IABinder{
-        (element:HTMLElement,accessor:IModelAccessor,controller:IController,extra?:any):Function;
-    }
-
-    export let _binders :{[index:string]:IABinder}={
-            "bibound.text":function(element:HTMLElement, accessor:IModelAccessor):Function{
-                var handler = function (sender:IModel,evt:ModelEvent) { element.innerHTML = evt.value; };
-                accessor.subscribe(handler);
-                element.innerHTML="";
-                return function(){accessor.unsubscribe(handler);}
-            },
-            "bibound.value":function(element:HTMLElement, accessor:IModelAccessor):Function{
-                var handler = function (sender:IModel,evt:ModelEvent) { (element as HTMLInputElement).value = evt.value; };
-                accessor.subscribe(handler);
-                (element as HTMLInputElement).value="";
-                return function(){accessor.unsubscribe(handler);}
-            },
-	    "bibound.textbox": function (element:HTMLElement, accessor:IModelAccessor) {
-	        let onchange = function () { tick = 0; accessor((element as HTMLInputElement).value); }
-	        let tick:number;
-	        let evtHandler= function () {
-	            if (tick) clearTimeout(tick);
-	            tick = setTimeout(onchange, 180);
-	         }
-	        platform.attach(element, "keydown", evtHandler);
-	        platform.attach(element, "keyup", evtHandler);
-	        platform.attach(element, "blur", evtHandler);
-			var handler = function (sender:IModel,evt:ModelEvent) { 
-                (element as HTMLInputElement).value = evt.value; 
-                evt.extra = element;
-            };
-	        accessor.subscribe(handler);
-	        (element as HTMLInputElement).value = "";
-	        return function () { if (tick) clearTimeout(tick);accessor.unsubscribe(handler);}
-	    },
-	    "bibound.select": function (element:HTMLElement, accessor:IModelAccessor) {
-	        var evtHandler = function () { 
-                accessor(
-                    (element as HTMLSelectElement).selectedIndex > -1 
-                    ? ((element as HTMLSelectElement).options[(element as HTMLSelectElement).selectedIndex] as HTMLOptionElement).value 
-                    : (element as HTMLSelectElement).value
-                ); 
-            }
-	        let setValue:Function = function (element:HTMLElement, value:any) {
-                if(value===undefined) return;
-	            var opts = (element as HTMLSelectElement).options;
-	            for (var i = 0, j = opts.length; i < j; i++) {
-	                if (value === (opts[i] as HTMLOptionElement).value) {
-	                    (element as HTMLSelectElement).selectedIndex = i;
-	                    return;
-	                }
-	            }
-	        }
-	        platform.attach(element, "change", evtHandler);
-			var handler = function (evt) { setValue(element, evt.value); }
-	        accessor.subscribe(handler);
-	        setValue(element, accessor());
-			return function(){accessor.unsubscribe(handler);}
-	    },
-	    "bibound.radio": function (element:HTMLElement, accessor:IModelAccessor) {
-	        var evtHandler = function () {
-	            if ((element as HTMLInputElement).checked) accessor((element as HTMLInputElement).value);
-	            else accessor(null);
-	        }
-	        var setValue = function (element:HTMLInputElement, value:any) {
-	            if (value == element.value) {
-	                element.checked = true;
-	                element.setAttribute("checked", "checked");
-	            } else {
-	                element.checked = false;
-	                element.removeAttribute("checked");
-	            }
-	        }
-			var handler = function (sender,evt) {
-	            setValue((element as HTMLInputElement), evt.value);
-                evt.extra = element;
-	        }
-	        platform.attach(element, "change", evtHandler);
-	        platform.attach(element, "blur", evtHandler);
-	        platform.attach(element, "click", evtHandler);
-	        accessor.subscribe(handler);
-	        setValue((element as HTMLInputElement), accessor());
-			return function(){accessor.unsubscribe(handler);}
-	    },
-	    "bibound.checkbox": function (element:HTMLElement, accessor) {
-	        var evtHandler = function () {
-                let form:HTMLFormElement = (element as HTMLInputElement).form;
-                let childNodes:NodeList;
-                let vals:Array<string> = [];
-                if(form!=null) {
-                    for (var i = 0, j = form.elements.length; i < j; i++) {
-                        let child = form.elements[i] as HTMLInputElement;
-                        if (child.name === (element as HTMLInputElement).name) {
-                            if (child.checked) { vals.push(child.value); }
-                        }
-                    }
-                }else{
-                    let childNodes = element.parentNode.parentElement.childNodes;
-                    for (let i:number = 0, j:number = childNodes.length; i < j; i++) {
-                        let child:Node = childNodes[i];
-                        for(let n:number=0,m= child.childNodes.length;n<m;n++ ){
-                            let ck = child.childNodes[n] as HTMLInputElement;
-                            if(ck.tagName!=='INPUT' || ck.type!=='checkbox') continue;
-                            if (ck.name === (element as HTMLInputElement).name) {
-                                if (ck.checked) { vals.push(ck.value); }
-                            }
-                        }
-                    }
-                }
-	            accessor(vals.length === 0 ? null : (vals.length == 1 ? vals[0] : vals));
-	        }
-	        var setValue = function (element, value) {
-	            if (value === null || value === undefined) {
-	                element.checked = false;
-	                element.removeAttribute("checked");
-	                return;
-	            }
-	            if (o2Str.call(value) === '[object Array]') {
-                    let hasValue:boolean = false;
-	                for (var i = 0, j = value.length; i < j; i++) {
-	                    if (value[i] === element.value) {hasValue =true;break;}
-	                }
-                    if (value[i] === element.value) {
-	                    element.checked = true;
-	                    element.setAttribute("checked", "checked");
-	                } else {
-	                    element.checked = false;
-	                    element.removeAttribute("checked");
-	                }
-	            } else {
-	                if (value == element.value) {
-	                    element.checked = true;
-	                    element.setAttribute("checked", "checked");
-	                } else {
-	                    element.checked = false;
-	                    element.removeAttribute("checked");
-	                }
-	            }
-	        }
-			let handler:IModelEventHandler = function (sender:IModel,evt:ModelEvent) {
-	            var value = evt.value;
-                evt.extra = element;
-	            setValue(element, value);
-	        };
-	        platform.attach(element, "change", evtHandler);
-	        platform.attach(element, "blur", evtHandler);
-	        platform.attach(element, "click", evtHandler);
-	        accessor.subscribe(handler);
-	        (element as HTMLInputElement).checked = false;
-            element.removeAttribute("checked");
-			return function(){accessor.unsubscribe(handler);}
-	    }
-    };
-    let uniBinder :IABinder =_binders["unibound"]= function(element:HTMLElement, accessor:IModelAccessor,controller:IController,extra?:any):Function{
-        let setValue:Function;
-        if(element.tagName=="SELECT"){
-            setValue = function (element:HTMLElement, value:any) {
-                if(value===undefined) return;
-	            var opts = (element as HTMLSelectElement).options;
-	            for (var i = 0, j = opts.length; i < j; i++) {
-	                if (value === (opts[i] as HTMLOptionElement).value) {
-	                    (element as HTMLSelectElement).selectedIndex = i;
-	                    return;
-	                }
-	            }
-	        }
-        }else{
-            setValue = function (element:HTMLElement, value:any) {
-                element[extra?extra.toString():"value"] = value===undefined?"":value;
-            }
-        }
-        
-        var handler = function (sender:IModel,evt:ModelEvent) {setValue(element,evt.value); };
-        accessor.subscribe(handler);
-        setValue(element,undefined);
-        return function(){accessor.unsubscribe(handler);}
-    };
-
-    class EachItemBindInfo{
-        constructor(view:HTMLElement , bind:IABind){
-            this.view = view;
-            this.bind = bind;
-        }
-        view:HTMLElement;
-        bind:IABind;
-    }
-
-    let eachBinder:IABinder = binders["each"] = function (element:HTMLElement, accessor:IModelAccessor,extra?:any) {
-        let controller:IController = extra as IController;
-        let model :Model = accessor.$model;
-        let eachId:string = element.getAttribute("y-each-view-id");
-        let itemViewProto:IView;
-        if(eachId){
-            itemViewProto = controller.module.data["y-views"][eachId];
-        }else{
-            eachId = seed().toString();
-            element.setAttribute("y-each-bind-id",eachId);
-            var elemProto:HTMLElement = platform.cloneNode(element);
-            let modelProto : Model = model.itemProto().$model;
-            //let bind :IABind = makeBind(modelProto,element,controller);
-            //itemViewProto = new View(controller,modelProto,elemProto);
-            controller.module.data["y-views"][eachId] = itemViewProto;
-        }
-            
+    let eachBinder :IBinder = binders["y-each"]  = function (element:HTMLElement,bindable:IBindable,context:View) {
+        let viewTemplate = context._innerViews[element.getAttribute("y-each-view-id")];        
+        let model = (bindable as IModel).$model;
         let addItemToView = function(item:Model,anchorElement:HTMLElement):void{
-            let itemView:IView = itemViewProto.clone(controller,item);
+            let domContainer = document.createElement("div");
+            let itemView:View = new View({
+                prototypeView : viewTemplate,
+                element:domContainer,
+                model : item
+            });
             let elem :HTMLElement = itemView.element;
             if(anchorElement==null) {
                 for(let i=0,j=elem.childNodes.length;i<j;i++){
@@ -2902,7 +2681,7 @@ export namespace Y {
             }
         }    
 	        
-		var handler = function (sender,evt:ModelEvent) {
+		let handler = function (sender,evt:ModelEvent) {
             if(evt.action == ModelActions.change){
                  element.innerHTML="";
                 for(let i=0,j=evt.value.length;i<j;i++){
@@ -2919,7 +2698,7 @@ export namespace Y {
                 return;
             }
             let ievt = evt.directSource;
-            let elemProto = itemViewProto.element;
+            let elemProto = viewTemplate.element;
 	        switch (ievt.action) {
                 case ModelActions.add:
                     let anchorElement:HTMLElement = null;
@@ -2941,12 +2720,209 @@ export namespace Y {
 	    }
 		model.subscribe(handler);
 		element.innerHTML = "";
-		return function () {
-			//TODO : 应该要重新构建，而不是清空
-			model["@model.props"] = {};
-			model.unsubscribe(handler);
-		}
-	}//end eachBind
+	}//end eachBinder 
+
+    eachBinder.parse= function(valueExpr:Expression,opts:ParseViewOpts,binder:IBinder):Expression{
+        if(valueExpr.type!=ExpressionTypes.model) throw new Error("each 只能绑定Model表达式");
+        let model:Model = (<ModelExpression>valueExpr).model.$model;
+        let eachView = new View({
+            element:opts.element,
+            controller : opts.context.controller,
+            nobind:true
+        });
+        //eachView.toTemplate();
+        let id = "y-view-each-" + seed();
+        opts.element.setAttribute("y-each-view-id",id);
+        let innerViews = opts.context._innerViews || (opts.context._innerViews={});
+        innerViews[id] = eachView;
+        model.toArray(eachView.model.$model);
+        return new BindExpression("y-each",valueExpr);
+    }
+    
+    
+    
+    
+
+    
+    export interface IABinder{
+        (element:HTMLElement,accessor:IModelAccessor,controller:IController,extra?:any):Function;
+    }
+
+    export let _binders :{[index:string]:IABinder}={
+            "bibound.text":function(element:HTMLElement, accessor:IModelAccessor):Function{
+                let handler = function (sender:IModel,evt:ModelEvent) { element.innerHTML = evt.value; };
+                accessor.subscribe(handler);
+                element.innerHTML="";
+                return function(){accessor.unsubscribe(handler);}
+            },
+            "bibound.value":function(element:HTMLElement, accessor:IModelAccessor):Function{
+                let handler = function (sender:IModel,evt:ModelEvent) { (element as HTMLInputElement).value = evt.value; };
+                accessor.subscribe(handler);
+                (element as HTMLInputElement).value="";
+                return function(){accessor.unsubscribe(handler);}
+            },
+	    "bibound.textbox": function (element:HTMLElement, accessor:IModelAccessor) {
+	        let onchange = function () { tick = 0; accessor((element as HTMLInputElement).value); }
+	        let tick:number;
+	        let evtHandler= function () {
+	            if (tick) clearTimeout(tick);
+	            tick = setTimeout(onchange, 180);
+	         }
+	        platform.attach(element, "keydown", evtHandler);
+	        platform.attach(element, "keyup", evtHandler);
+	        platform.attach(element, "blur", evtHandler);
+			let handler = function (sender:IModel,evt:ModelEvent) { 
+                (element as HTMLInputElement).value = evt.value; 
+                evt.extra = element;
+            };
+	        accessor.subscribe(handler);
+	        (element as HTMLInputElement).value = "";
+	        return function () { if (tick) clearTimeout(tick);accessor.unsubscribe(handler);}
+	    },
+	    "bibound.select": function (element:HTMLElement, accessor:IModelAccessor) {
+	        let evtHandler = function () { 
+                accessor(
+                    (element as HTMLSelectElement).selectedIndex > -1 
+                    ? ((element as HTMLSelectElement).options[(element as HTMLSelectElement).selectedIndex] as HTMLOptionElement).value 
+                    : (element as HTMLSelectElement).value
+                ); 
+            }
+	        let setValue:Function = function (element:HTMLElement, value:any) {
+                if(value===undefined) return;
+	            let opts = (element as HTMLSelectElement).options;
+	            for (let i = 0, j = opts.length; i < j; i++) {
+	                if (value === (opts[i] as HTMLOptionElement).value) {
+	                    (element as HTMLSelectElement).selectedIndex = i;
+	                    return;
+	                }
+	            }
+	        }
+	        platform.attach(element, "change", evtHandler);
+			let handler = function (evt) { setValue(element, evt.value); }
+	        accessor.subscribe(handler);
+	        setValue(element, accessor());
+			return function(){accessor.unsubscribe(handler);}
+	    },
+	    "bibound.radio": function (element:HTMLElement, accessor:IModelAccessor) {
+	        let evtHandler = function () {
+	            if ((element as HTMLInputElement).checked) accessor((element as HTMLInputElement).value);
+	            else accessor(null);
+	        }
+	        let setValue = function (element:HTMLInputElement, value:any) {
+	            if (value == element.value) {
+	                element.checked = true;
+	                element.setAttribute("checked", "checked");
+	            } else {
+	                element.checked = false;
+	                element.removeAttribute("checked");
+	            }
+	        }
+			let handler = function (sender,evt) {
+	            setValue((element as HTMLInputElement), evt.value);
+                evt.extra = element;
+	        }
+	        platform.attach(element, "change", evtHandler);
+	        platform.attach(element, "blur", evtHandler);
+	        platform.attach(element, "click", evtHandler);
+	        accessor.subscribe(handler);
+	        setValue((element as HTMLInputElement), accessor());
+			return function(){accessor.unsubscribe(handler);}
+	    },
+	    "bibound.checkbox": function (element:HTMLElement, accessor) {
+	        let evtHandler = function () {
+                let form:HTMLFormElement = (element as HTMLInputElement).form;
+                let childNodes:NodeList;
+                let vals:Array<string> = [];
+                if(form!=null) {
+                    for (let i = 0, j = form.elements.length; i < j; i++) {
+                        let child = form.elements[i] as HTMLInputElement;
+                        if (child.name === (element as HTMLInputElement).name) {
+                            if (child.checked) { vals.push(child.value); }
+                        }
+                    }
+                }else{
+                    let childNodes = element.parentNode.parentElement.childNodes;
+                    for (let i:number = 0, j:number = childNodes.length; i < j; i++) {
+                        let child:Node = childNodes[i];
+                        for(let n:number=0,m= child.childNodes.length;n<m;n++ ){
+                            let ck = child.childNodes[n] as HTMLInputElement;
+                            if(ck.tagName!=='INPUT' || ck.type!=='checkbox') continue;
+                            if (ck.name === (element as HTMLInputElement).name) {
+                                if (ck.checked) { vals.push(ck.value); }
+                            }
+                        }
+                    }
+                }
+	            accessor(vals.length === 0 ? null : (vals.length == 1 ? vals[0] : vals));
+	        }
+	        let setValue = function (element, value) {
+	            if (value === null || value === undefined) {
+	                element.checked = false;
+	                element.removeAttribute("checked");
+	                return;
+	            }
+	            if (o2Str.call(value) === '[object Array]') {
+                    let hasValue:boolean = false;
+	                for (let i = 0, j = value.length; i < j; i++) {
+	                    if (value[i] === element.value) {hasValue =true;break;}
+                        if (value[i] === element.value) {
+                            element.checked = true;
+                            element.setAttribute("checked", "checked");
+                        } else {
+                            element.checked = false;
+                            element.removeAttribute("checked");
+                        }
+                    }
+	            } else {
+	                if (value == element.value) {
+	                    element.checked = true;
+	                    element.setAttribute("checked", "checked");
+	                } else {
+	                    element.checked = false;
+	                    element.removeAttribute("checked");
+	                }
+	            }
+	        }
+			let handler:IModelEventHandler = function (sender:IModel,evt:ModelEvent) {
+	            let value = evt.value;
+                evt.extra = element;
+	            setValue(element, value);
+	        };
+	        platform.attach(element, "change", evtHandler);
+	        platform.attach(element, "blur", evtHandler);
+	        platform.attach(element, "click", evtHandler);
+	        accessor.subscribe(handler);
+	        (element as HTMLInputElement).checked = false;
+            element.removeAttribute("checked");
+			return function(){accessor.unsubscribe(handler);}
+	    }
+    };
+    let uniBinder :IABinder =_binders["unibound"]= function(element:HTMLElement, accessor:IModelAccessor,controller:IController,extra?:any):Function{
+        let setValue:Function;
+        if(element.tagName=="SELECT"){
+            setValue = function (element:HTMLElement, value:any) {
+                if(value===undefined) return;
+	            let opts = (element as HTMLSelectElement).options;
+	            for (let i = 0, j = opts.length; i < j; i++) {
+	                if (value === (opts[i] as HTMLOptionElement).value) {
+	                    (element as HTMLSelectElement).selectedIndex = i;
+	                    return;
+	                }
+	            }
+	        }
+        }else{
+            setValue = function (element:HTMLElement, value:any) {
+                element[extra?extra.toString():"value"] = value===undefined?"":value;
+            }
+        }
+        
+        let handler = function (sender:IModel,evt:ModelEvent) {setValue(element,evt.value); };
+        accessor.subscribe(handler);
+        setValue(element,undefined);
+        return function(){accessor.unsubscribe(handler);}
+    };
+
+
 
     export interface IControllerOpts{
         url?:string;
