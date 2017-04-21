@@ -2017,13 +2017,15 @@ export namespace Y {
                     scope = expr as ModelExpression;
                     continue;
                 }
-                expr = new BindExpression(attrname,expr);
+                
                 
                 if(binder.parse) {
                     if(customerParsedExpression) throw new Error("Already has a binder.parse");
                     customerParsedExpression = binder.parse(expr,opts,binder);
+                    expr = new BindExpression(attrname,expr);
                     expressions.push(customerParsedExpression);
                 }else{
+                    expr = new BindExpression(attrname,expr);
                     expressions.push(expr);
                 }
             }
@@ -2562,7 +2564,7 @@ export namespace Y {
             return  `$_context.getBinder("${this.bindername}").call($_context,$_element,`+ this.expression.toCode(context) + ",$_context);\n";
         } 
         toConstantCode(context:View):string{
-            return  `$_context.getBinder[${this.bindername}].call($_context,$_element,new Y.ConstantBindableObject(`+this.expression.toCode(context)+"),$_context);\n";
+            return  `$_context.getBinder("${this.bindername}").call($_context,$_element,new Y.ConstantBindableObject(`+this.expression.toCode(context)+"),$_context);\n";
         } 
         toFuncCode(context:View):string{
             let deps = this.getDeps(context);
@@ -2662,7 +2664,7 @@ export namespace Y {
         let viewTemplate = context._innerViews[element.getAttribute("y-each-view-id")];        
         let model = (bindable as IModel).$model;
         let addItemToView = function(item:Model,anchorElement:HTMLElement):void{
-            let domContainer = document.createElement("div");
+            let domContainer = document.createElement(viewTemplate.element.tagName);
             let itemView:View = new View({
                 prototypeView : viewTemplate,
                 element:domContainer,
@@ -2671,7 +2673,7 @@ export namespace Y {
             let elem :HTMLElement = itemView.element;
             if(anchorElement==null) {
                 for(let i=0,j=elem.childNodes.length;i<j;i++){
-                     element.appendChild(elem.childNodes[i]);
+                     element.appendChild(elem.firstChild);
                 }
             }else{
                 for(let i=0,j=elem.childNodes.length;i<j;i++){
@@ -2726,7 +2728,7 @@ export namespace Y {
         if(valueExpr.type!=ExpressionTypes.model) throw new Error("each 只能绑定Model表达式");
         let model:Model = (<ModelExpression>valueExpr).model.$model;
         let eachView = new View({
-            element:opts.element,
+            element:opts.element.cloneNode(true) as HTMLElement,
             controller : opts.context.controller,
             nobind:true
         });
