@@ -2530,9 +2530,6 @@ export namespace Y {
         (element:HTMLElement,bindable:IBindable,context:View):void;
         parse?:(valueExpr:Expression,opts:ParseViewOpts,binder:IBinder)=>Expression;
     }
-    
-    
-    
     let binders:{[index:string]:IBinder} = View.binders;
     binders["y-scope"] = function(){};
     let textBinder = binders["y-text"] = function(element:HTMLElement,bindable:IBindable,context:View){

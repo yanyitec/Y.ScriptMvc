@@ -1,0 +1,62 @@
+<html lang="zh-CN">
+    <head>
+        <meta charset="utf-8">
+        <script>window.exports = {};</script>
+        <script src="../../scripts/y.mvc.js" y-alias="y.mvc.js" y-module-global ></script>
+        <script src="../../scripts/reference.js" y-alias="reference.js" y-module-global ></script>
+        <link href="../../css/reference.css" rel="stylesheet"  y-alias="reference.css" y-module-global>
+    </head>
+    <body>
+        <fieldset class="instruction" id="ref_view">
+            <legend>class View</legend>
+            <fieldset class="sample" >
+                <legend>示例</legend>
+                <textarea class="test-code" rows="20" cols="40" id="ref_view_sample">
+<div id="my_view">
+    <label y-text="$UsernameTip" class="label">[名字的标签]</label>
+    <input type="text" y-value="$Username" title="这里的值改变后，模型的值也会改变" />
+    <label class="ins"><--在这里输入值的时候，模型的值会随之变化。</label>
+</div>
+
+<input type="button" onclick="ref_view_getName()" value="点击我查看模型中的值"/>
+<script>
+//创建一个视图
+var view = new Y.View({
+    element:"#my_view"
+}); 
+//view 会自动根据绑定生成模型
+//给视图的模型赋值
+view.model.UsernameTip("名字:");
+view.model.Username("yiy");
+
+//查看模型中的值
+function ref_view_getName(){
+    alert(view.model.Username());
+}   
+</script>        
+                </textarea>
+            </fieldset>
+        </fieldset>
+        <script>
+function executeSample(sampleId){
+    var codeArea = document.getElementById(sampleId);
+
+    var iframe = codeArea.nextSibling;
+    if(!iframe || iframe.tagName!="IFRAME") {
+        iframe = document.createElement("iframe");
+        iframe.src="about:blank";
+        codeArea.parentNode.appendChild(iframe);
+    }
+    var html = '<html lang="zh-CN"><head><meta charset="utf-8"><script>window.exports = {};<'+'/script>';
+    html += '<script src="../../scripts/y.mvc.js" y-alias="y.mvc.js" y-module-global ><'+'/script>';
+    html += '<script src="../../scripts/reference.js" y-alias="reference.js" y-module-global ><'+'/script>';
+    html += '<link href="../../css/reference.css" rel="stylesheet"  y-alias="reference.css" y-module-global>';
+    html += "</head><body>";
+    html += codeArea.value;
+    html += "</body></html>";
+    iframe.contentWindow.document.write(html);
+}
+executeSample("ref_view_sample");
+        </script>
+    </body>
+</html>
