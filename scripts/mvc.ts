@@ -1197,8 +1197,8 @@ export namespace Y {
         pop?(returnModel?: boolean): any;
         unshift?(itemValue: any): IModel;
         shift?(returnModel?: boolean): any;
-        getItem?(index: number, returnModel?:boolean): any;
-        setItem?(index: number, returnModel?: boolean): any;
+        get_item?(index: number, returnModel?:boolean): any;
+        set_item?(index: number, returnModel?: boolean): any;
         count?(): number;
     }
     
@@ -1426,10 +1426,12 @@ export namespace Y {
         public clone(newSubject: Object = {},newName?:string|number): Model {
             let newModel: Model = new Model(newName = newName===undefined?this._name:newName, newSubject);
             newModel._defination = this._defination;
-            newModel.$modelType = this.$modelType;
+            
             if(newModel._itemProto = this._itemProto){
-                newModel.toArray(this._itemProto);return newModel;
+                newModel.toArray(this._itemProto);
+                return newModel;
             }
+            newModel.$modelType = this.$modelType;
             if(newModel._computed=this._computed){
                 return newModel;
             }
@@ -1494,7 +1496,7 @@ export namespace Y {
             this._itemProto = itemProto as Model;
             (this as Model).itemProto = ():Model=>{return this._itemProto;};
             (itemProto as Model)._superior = this;
-            
+            //(itemProto as Model)._root = this.root();            
             let accessor: IModelAccessor = this.$accessor;
             this.$modelType = accessor.$modelType = ModelTypes.array;
             
@@ -1508,11 +1510,11 @@ export namespace Y {
                 let result:any = this.shift(returnModel); 
                 return returnModel===true?result.$accessor:result;
             };
-            accessor.getItem = (index: number, returnModel?: boolean):any => { 
-                let result :any = this.getItem(index, returnModel); 
+            accessor.get_item = (index: number, returnModel?: boolean):any => { 
+                let result :any = this.get_item(index, returnModel); 
                 return returnModel===true?result.$accessor:result;
             };
-            accessor.setItem = (index: number, itemValue: any):IModel => { (this as IModel).setItem(index, itemValue); return accessor; };
+            accessor.set_item = (index: number, itemValue: any):IModel => { (this as IModel).set_item(index, itemValue); return accessor; };
             accessor.count = () => { return (this as IModel).count(); };
             return itemProto as Model;
         } 
@@ -1555,7 +1557,7 @@ export namespace Y {
             else{
                 let evtc: ModelEvent = new ModelEvent(this, ModelActions.child, value, value,evt);
                 this._notifyValuechange(evt);
-                
+                //如果没有itemModel而又要求返回itemModel，必须构造一个
             }
             
 
@@ -1603,7 +1605,7 @@ export namespace Y {
 
             return returnModel ? itemModel : itemValue;
         }
-        public getItem(index: number, returnModel?: boolean): any {
+        public get_item(index: number, returnModel?: boolean): any {
             if(this.$modelType!==ModelTypes.array) {throw new NotArrayException();}
             let value: any = this._subject[this._name];
             if (!value) { return undefined; }
@@ -1613,13 +1615,14 @@ export namespace Y {
                 let itemModel: Model = members[index];
                 if (itemModel !== undefined) { return itemModel; }
                 itemModel = this._itemProto.clone(value,index);
+                itemModel._superior = this;
                 members[index] = itemModel;
                 return itemModel;
             } else {
                 return value[index];
             }
         }
-        public setItem(index: number, itemValue: any): Model {
+        public set_item(index: number, itemValue: any): Model {
             if(this.$modelType!==ModelTypes.array) {throw new NotArrayException();}
             let value: any = this._subject[this._name];
             if (!value) { value = this._subject[this._name] = []; }
@@ -1921,6 +1924,7 @@ export namespace Y {
                     this.model = new Model("$",{"$":opts.model||{}}).$accessor;
                 }
                 this._binder = protoView._binder;
+                this._innerViews = protoView._innerViews;
             }
             if(!opts.nobind) this.bind();
         }
@@ -2040,6 +2044,7 @@ export namespace Y {
         let nodes = element.childNodes;
         for(let i =0,j=nodes.length;i<j;i++){
             let node = nodes[i];
+            if(node.nodeType==8)continue;
             expressions.push(new ChildBeginExpression(i,element as HTMLElement));
             parseElement({context:context,element:node as HTMLElement ,expressions: expressions,model:childModel,ignoreSelf:false});
             let last = expressions.pop() as ChildBeginExpression;
@@ -2661,14 +2666,16 @@ export namespace Y {
         (<HTMLInputElement>element).value = bindable.get_value();
     }
     let eachBinder :IBinder = binders["y-each"]  = function (element:HTMLElement,bindable:IBindable,context:View) {
-        let viewTemplate = context._innerViews[element.getAttribute("y-each-view-id")];        
+        let viewId = element.getAttribute("y-each-view-id");
+        let viewTemplate = context._innerViews[viewId];        
         let model = (bindable as IModel).$model;
         let addItemToView = function(item:Model,anchorElement:HTMLElement):void{
             let domContainer = document.createElement(viewTemplate.element.tagName);
             let itemView:View = new View({
                 prototypeView : viewTemplate,
                 element:domContainer,
-                model : item
+                model : item,
+                controller : context.controller
             });
             let elem :HTMLElement = itemView.element;
             if(anchorElement==null) {
@@ -2687,7 +2694,7 @@ export namespace Y {
             if(evt.action == ModelActions.change){
                  element.innerHTML="";
                 for(let i=0,j=evt.value.length;i<j;i++){
-                    let item :Model = model.getItem(i,true);
+                    let item :Model = model.get_item(i,true);
                     addItemToView(item,null);
                 }
                 return;
@@ -2705,7 +2712,7 @@ export namespace Y {
                 case ModelActions.add:
                     let anchorElement:HTMLElement = null;
                     if(evt.index*elemProto.childNodes.length<=element.childNodes.length-1)anchorElement = element.childNodes[evt.index] as HTMLElement;
-                    addItemToView(model.getItem(evt.index,true),anchorElement);
+                    addItemToView(model.get_item(evt.index,true),anchorElement);
                     break;
                 case ModelActions.remove:
                     let at :number = evt.index*elemProto.childNodes.length;
@@ -2727,17 +2734,20 @@ export namespace Y {
     eachBinder.parse= function(valueExpr:Expression,opts:ParseViewOpts,binder:IBinder):Expression{
         if(valueExpr.type!=ExpressionTypes.model) throw new Error("each 只能绑定Model表达式");
         let model:Model = (<ModelExpression>valueExpr).model.$model;
+        let itemTemplate = model.toArray();
         let eachView = new View({
             element:opts.element.cloneNode(true) as HTMLElement,
             controller : opts.context.controller,
+            model:itemTemplate,
             nobind:true
         });
+        
         //eachView.toTemplate();
         let id = "y-view-each-" + seed();
         opts.element.setAttribute("y-each-view-id",id);
         let innerViews = opts.context._innerViews || (opts.context._innerViews={});
         innerViews[id] = eachView;
-        model.toArray(eachView.model.$model);
+        //model.toArray(eachView.model.$model);
         return new BindExpression("y-each",valueExpr);
     }
     

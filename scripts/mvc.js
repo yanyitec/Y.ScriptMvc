@@ -1395,11 +1395,11 @@ var Y;
             if (newSubject === void 0) { newSubject = {}; }
             var newModel = new Model(newName = newName === undefined ? this._name : newName, newSubject);
             newModel._defination = this._defination;
-            newModel.$modelType = this.$modelType;
             if (newModel._itemProto = this._itemProto) {
                 newModel.toArray(this._itemProto);
                 return newModel;
             }
+            newModel.$modelType = this.$modelType;
             if (newModel._computed = this._computed) {
                 return newModel;
             }
@@ -1477,6 +1477,7 @@ var Y;
             this._itemProto = itemProto;
             this.itemProto = function () { return _this._itemProto; };
             itemProto._superior = this;
+            //(itemProto as Model)._root = this.root();            
             var accessor = this.$accessor;
             this.$modelType = accessor.$modelType = ModelTypes.array;
             accessor.push = function (itemValue) { _this.push(itemValue); return accessor; };
@@ -1489,11 +1490,11 @@ var Y;
                 var result = _this.shift(returnModel);
                 return returnModel === true ? result.$accessor : result;
             };
-            accessor.getItem = function (index, returnModel) {
-                var result = _this.getItem(index, returnModel);
+            accessor.get_item = function (index, returnModel) {
+                var result = _this.get_item(index, returnModel);
                 return returnModel === true ? result.$accessor : result;
             };
-            accessor.setItem = function (index, itemValue) { _this.setItem(index, itemValue); return accessor; };
+            accessor.set_item = function (index, itemValue) { _this.set_item(index, itemValue); return accessor; };
             accessor.count = function () { return _this.count(); };
             return itemProto;
         };
@@ -1607,7 +1608,7 @@ var Y;
             this._notifyValuechange(evt);
             return returnModel ? itemModel : itemValue;
         };
-        Model.prototype.getItem = function (index, returnModel) {
+        Model.prototype.get_item = function (index, returnModel) {
             if (this.$modelType !== ModelTypes.array) {
                 throw new NotArrayException();
             }
@@ -1625,6 +1626,7 @@ var Y;
                     return itemModel;
                 }
                 itemModel = this._itemProto.clone(value, index);
+                itemModel._superior = this;
                 members[index] = itemModel;
                 return itemModel;
             }
@@ -1632,7 +1634,7 @@ var Y;
                 return value[index];
             }
         };
-        Model.prototype.setItem = function (index, itemValue) {
+        Model.prototype.set_item = function (index, itemValue) {
             if (this.$modelType !== ModelTypes.array) {
                 throw new NotArrayException();
             }
@@ -1906,6 +1908,7 @@ var Y;
                     this.model = new Model("$", { "$": opts.model || {} }).$accessor;
                 }
                 this._binder = protoView._binder;
+                this._innerViews = protoView._innerViews;
             }
             if (!opts.nobind)
                 this.bind();
@@ -2035,6 +2038,8 @@ var Y;
         var nodes = element.childNodes;
         for (var i = 0, j = nodes.length; i < j; i++) {
             var node = nodes[i];
+            if (node.nodeType == 8)
+                continue;
             expressions.push(new ChildBeginExpression(i, element));
             parseElement({ context: context, element: node, expressions: expressions, model: childModel, ignoreSelf: false });
             var last = expressions.pop();
@@ -2695,14 +2700,16 @@ var Y;
         element.value = bindable.get_value();
     };
     var eachBinder = binders["y-each"] = function (element, bindable, context) {
-        var viewTemplate = context._innerViews[element.getAttribute("y-each-view-id")];
+        var viewId = element.getAttribute("y-each-view-id");
+        var viewTemplate = context._innerViews[viewId];
         var model = bindable.$model;
         var addItemToView = function (item, anchorElement) {
             var domContainer = document.createElement(viewTemplate.element.tagName);
             var itemView = new View({
                 prototypeView: viewTemplate,
                 element: domContainer,
-                model: item
+                model: item,
+                controller: context.controller
             });
             var elem = itemView.element;
             if (anchorElement == null) {
@@ -2720,7 +2727,7 @@ var Y;
             if (evt.action == ModelActions.change) {
                 element.innerHTML = "";
                 for (var i = 0, j = evt.value.length; i < j; i++) {
-                    var item = model.getItem(i, true);
+                    var item = model.get_item(i, true);
                     addItemToView(item, null);
                 }
                 return;
@@ -2739,7 +2746,7 @@ var Y;
                     var anchorElement = null;
                     if (evt.index * elemProto.childNodes.length <= element.childNodes.length - 1)
                         anchorElement = element.childNodes[evt.index];
-                    addItemToView(model.getItem(evt.index, true), anchorElement);
+                    addItemToView(model.get_item(evt.index, true), anchorElement);
                     break;
                 case ModelActions.remove:
                     var at = evt.index * elemProto.childNodes.length;
@@ -2762,9 +2769,11 @@ var Y;
         if (valueExpr.type != ExpressionTypes.model)
             throw new Error("each 只能绑定Model表达式");
         var model = valueExpr.model.$model;
+        var itemTemplate = model.toArray();
         var eachView = new View({
             element: opts.element.cloneNode(true),
             controller: opts.context.controller,
+            model: itemTemplate,
             nobind: true
         });
         //eachView.toTemplate();
@@ -2772,7 +2781,7 @@ var Y;
         opts.element.setAttribute("y-each-view-id", id);
         var innerViews = opts.context._innerViews || (opts.context._innerViews = {});
         innerViews[id] = eachView;
-        model.toArray(eachView.model.$model);
+        //model.toArray(eachView.model.$model);
         return new BindExpression("y-each", valueExpr);
     };
     Y._binders = {
